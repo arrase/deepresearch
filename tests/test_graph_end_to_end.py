@@ -112,18 +112,15 @@ class FakeLLMWorkers:
         )
 
 
-def test_graph_runs_end_to_end_with_fakes(tmp_path) -> None:
+def test_graph_runs_end_to_end_with_fakes() -> None:
     config = ResearchConfig()
-    config.runtime.artifacts_dir = tmp_path / "artifacts"
-    config.runtime.logs_dir = tmp_path / "logs"
-    config.ensure_directories()
     runtime = ResearchRuntime(
         config=config,
         context_manager=ContextManager(config),
         llm_workers=FakeLLMWorkers(),
         browser=FakeBrowser(),
         search_client=FakeSearchClient(),
-        telemetry=TelemetryRecorder(artifacts_dir=config.runtime.artifacts_dir, logs_dir=config.runtime.logs_dir),
+        telemetry=TelemetryRecorder(),
     )
     graph = build_graph(runtime)
     initial_state = build_initial_state(
@@ -140,48 +137,16 @@ def test_graph_runs_end_to_end_with_fakes(tmp_path) -> None:
     assert result["atomic_evidence"]
 
 
-def test_markdown_report_is_persisted_as_artifact(tmp_path) -> None:
+def test_graph_routes_directly_to_evaluator_when_no_candidate_exists() -> None:
     config = ResearchConfig()
-    config.runtime.artifacts_dir = tmp_path / "artifacts"
-    config.runtime.logs_dir = tmp_path / "logs"
-    config.ensure_directories()
-    runtime = ResearchRuntime(
-        config=config,
-        context_manager=ContextManager(config),
-        llm_workers=FakeLLMWorkers(),
-        browser=FakeBrowser(),
-        search_client=FakeSearchClient(),
-        telemetry=TelemetryRecorder(artifacts_dir=config.runtime.artifacts_dir, logs_dir=config.runtime.logs_dir),
-    )
-    graph = build_graph(runtime)
-    initial_state = build_initial_state(
-        "What is happening to fusion demand?",
-        max_iterations=4,
-        target_tokens=100000,
-        configured_by="test",
-        selection_policy="hierarchical_relevance_first",
-    )
-    result = graph.invoke(initial_state)
-    final_report = result["final_report"]
-    assert final_report is not None
-    target = runtime.telemetry.write_markdown_report(final_report, label="test_report")
-    assert target.exists()
-    assert "## Executive Summary" in target.read_text(encoding="utf-8")
-
-
-def test_graph_routes_directly_to_evaluator_when_no_candidate_exists(tmp_path) -> None:
-    config = ResearchConfig()
-    config.runtime.artifacts_dir = tmp_path / "artifacts"
-    config.runtime.logs_dir = tmp_path / "logs"
     config.runtime.max_iterations = 1
-    config.ensure_directories()
     runtime = ResearchRuntime(
         config=config,
         context_manager=ContextManager(config),
         llm_workers=FakeLLMWorkers(),
         browser=FailIfCalledBrowser(),
         search_client=EmptySearchClient(),
-        telemetry=TelemetryRecorder(artifacts_dir=config.runtime.artifacts_dir, logs_dir=config.runtime.logs_dir),
+        telemetry=TelemetryRecorder(),
     )
     graph = build_graph(runtime)
     initial_state = build_initial_state(

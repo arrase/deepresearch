@@ -39,8 +39,6 @@ def test_cli_overrides_take_precedence_over_toml_config(tmp_path) -> None:
         model="custom-model",
         num_ctx=32768,
         max_iterations=5,
-        artifacts_dir=str(tmp_path / "artifacts"),
-        logs_dir=str(tmp_path / "logs"),
     )
 
     apply_cli_overrides(config, args)

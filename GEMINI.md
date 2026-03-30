@@ -19,12 +19,8 @@ Deep Research is an auditable research pipeline designed to transform open-ended
   - `state.py`: Defines the `ResearchState` TypedDict and other data models (Pydantic).
   - `subagents/`: Specialized workers for LLM tasks and deterministic data processing.
   - `context_manager.py`: Manages the assembly of context for LLM prompts.
-  - `telemetry.py`: Handles logging, artifact generation, and checkpoints.
+  - `telemetry.py`: Handles console logging.
 - `config/`: Configuration root.
-  - `config.toml`: Main project configuration.
-  - `prompts/`: Jinja2 templates for each research stage (planner, extractor, evaluator, synthesizer, repair).
-- `artifacts/`: Default directory for generated reports and session checkpoints.
-- `tests/`: Comprehensive test suite using `pytest`.
 
 ## Building and Running
 
@@ -41,13 +37,13 @@ pip install -e .
 ### Running Research
 ```bash
 # Run a basic research session
-deepresearch run "What are the latest developments in fusion energy?"
+deepresearch "What are the latest developments in fusion energy?"
 
 # Run with a custom configuration root
-deepresearch run "..." --config-root ./my-config
+deepresearch "..." --config-root ./my-config
 
-# Validate infrastructure (Docker, Ollama, Lightpanda)
-deepresearch self-check
+# Specify an output file
+deepresearch "..." -o my_report.md
 ```
 
 ### Running Tests
@@ -61,5 +57,5 @@ pytest
 - **Prompt Decoupling**: Do NOT use inline strings for LLM prompts. Always use the Jinja2 templates in `config/prompts/`.
 - **Deterministic Processing**: Use deterministic workers (in `deepresearch/subagents/deterministic.py`) for data cleanup, scoring, and deduplication to ensure consistency.
 - **Type Safety**: Use Pydantic models for data structures and maintain strict type hinting throughout the codebase.
-- **Telemetry & Artifacts**: All significant events should be recorded via the `TelemetryRecorder`. Every run should produce a markdown report and a final state checkpoint in the `artifacts/` directory.
+- **Telemetry**: Significant events are recorded via the `TelemetryRecorder` to console. Every run should produce a markdown report in the location specified by the user.
 - **Browser Usage**: Web interaction is handled through `LightpandaDockerManager`. Ensure the Docker daemon is accessible during runtime.

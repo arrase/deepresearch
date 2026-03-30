@@ -63,7 +63,7 @@ It controls:
 - context window policy
 - browser settings
 - search settings
-- runtime limits and artifact paths
+- runtime limits
 - prompt directory and template strictness
 
 ## CLI Usage
@@ -71,25 +71,25 @@ It controls:
 Run a research session:
 
 ```bash
-deepresearch run "Is OpenAI viable in the long term?"
+deepresearch "Is OpenAI viable in the long term?"
+```
+
+Run and specify an output file:
+
+```bash
+deepresearch "Is OpenAI viable in the long term?" -o my_report.md
 ```
 
 Run with a custom config root for development:
 
 ```bash
-deepresearch run "Is fusion commercially viable?" --config-root ./tmp-config
+deepresearch "Is fusion commercially viable?" --config-root ./tmp-config
 ```
 
 Override selected configuration values from the CLI:
 
 ```bash
-deepresearch run "Is fusion commercially viable?" --config-root ./tmp-config --model qwen3.5:9b --num-ctx 32768 --max-iterations 6
-```
-
-Validate infrastructure only:
-
-```bash
-deepresearch self-check --config-root ./tmp-config
+deepresearch "Is fusion commercially viable?" --config-root ./tmp-config --model qwen3.5:9b --num-ctx 32768 --max-iterations 6
 ```
 
 ## Development Notes

@@ -128,9 +128,6 @@ class RuntimeConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     max_iterations: int = Field(default=8, ge=1)
-    artifacts_dir: Path = Field(default=Path("artifacts"))
-    logs_dir: Path = Field(default=Path("logs"))
-    enable_checkpoints: bool = Field(default=True)
     llm_retry_attempts: int = Field(default=2, ge=0, le=5)
 
 
@@ -182,7 +179,3 @@ class ResearchConfig(BaseModel):
         if self.prompts.directory.is_absolute():
             return self.prompts.directory
         return self._config_root / self.prompts.directory
-
-    def ensure_directories(self) -> None:
-        self.runtime.artifacts_dir.mkdir(parents=True, exist_ok=True)
-        self.runtime.logs_dir.mkdir(parents=True, exist_ok=True)

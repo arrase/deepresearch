@@ -7,8 +7,6 @@ classifies technical outcomes, and returns a stable BrowserResult to the graph.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Any
 import re
 import unicodedata
 from urllib.parse import parse_qs, urljoin, urlparse
@@ -18,7 +16,7 @@ import httpx
 from bs4 import BeautifulSoup
 from docker.errors import DockerException
 
-from .config import BrowserConfig, ModelConfig, SearchConfig
+from .config import BrowserConfig, SearchConfig
 from .state import BrowserPageStatus, BrowserResult, SearchCandidate
 from .subagents.deterministic import (
     canonicalize_url,
@@ -26,19 +24,6 @@ from .subagents.deterministic import (
     extract_domain,
     short_excerpt,
 )
-
-
-class SelfCheckError(RuntimeError):
-    """Recoverable operational error detected during self-check."""
-
-
-@dataclass
-class SelfCheckReport:
-    docker_ok: bool
-    ollama_ok: bool
-    model_available: bool
-    lightpanda_image_ready: bool
-    details: dict[str, Any]
 
 
 class DuckDuckGoSearchClient:
@@ -74,7 +59,7 @@ class DuckDuckGoSearchClient:
                 return candidates
 
         if saw_anomaly:
-            raise SelfCheckError("DuckDuckGo returned an anomaly challenge instead of search results")
+            raise RuntimeError("DuckDuckGo returned an anomaly challenge instead of search results")
         return []
 
     def _parse_lite_results(self, html: str, *, max_results: int) -> list[SearchCandidate]:
@@ -151,10 +136,6 @@ class LightpandaDockerManager:
     @property
     def image(self) -> str:
         return self._config.image
-
-    def ensure_image(self) -> None:
-        self._client.ping()
-        self._client.images.pull(self._config.image)
 
     def fetch(self, url: str) -> BrowserResult:
         command = [
@@ -235,43 +216,3 @@ class LightpandaDockerManager:
                 return cleaned[:200]
         first_line = next((line.strip("# ").strip() for line in content.splitlines() if line.strip()), "")
         return first_line[:200]
-
-
-def self_check_services(
-    *,
-    browser: LightpandaDockerManager,
-    model: ModelConfig,
-) -> SelfCheckReport:
-    details: dict[str, Any] = {}
-    docker_ok = False
-    ollama_ok = False
-    model_available = False
-    lightpanda_image_ready = False
-
-    try:
-        browser.ensure_image()
-        docker_ok = True
-        lightpanda_image_ready = True
-        details["lightpanda_image"] = browser.image
-    except Exception as exc:  # noqa: BLE001
-        details["docker_error"] = str(exc)
-
-    try:
-        with httpx.Client(base_url=model.base_url, timeout=10.0) as client:
-            tags_response = client.get("/api/tags")
-            tags_response.raise_for_status()
-            ollama_ok = True
-            models = tags_response.json().get("models", [])
-            model_names = {entry.get("name", "") for entry in models}
-            model_available = model.model_name in model_names
-            details["available_models"] = sorted(name for name in model_names if name)
-    except Exception as exc:  # noqa: BLE001
-        details["ollama_error"] = str(exc)
-
-    return SelfCheckReport(
-        docker_ok=docker_ok,
-        ollama_ok=ollama_ok,
-        model_available=model_available,
-        lightpanda_image_ready=lightpanda_image_ready,
-        details=details,
-    )
