@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from langgraph.graph import END, START, StateGraph
 
-from nodes import ResearchNodes, ResearchRuntime
-from state import BrowserPageStatus, ResearchState
+from .nodes import ResearchNodes, ResearchRuntime
+from .state import BrowserPageStatus, ResearchState
 
 
 def build_graph(runtime: ResearchRuntime):

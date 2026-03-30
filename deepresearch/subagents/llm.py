@@ -18,10 +18,10 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_ollama import ChatOllama
 from pydantic import BaseModel, ConfigDict, Field
 
-from config import ModelConfig, RuntimeConfig
-from context_manager import NodeContext
-from state import ConfidenceLevel, Contradiction, FinalReport, Gap, GapSeverity, SearchIntent, Subquery
-from subagents.deterministic import build_report_sources, render_markdown_report
+from ..config import ModelConfig, RuntimeConfig
+from ..context_manager import NodeContext
+from ..state import ConfidenceLevel, Contradiction, FinalReport, Gap, GapSeverity, SearchIntent, Subquery
+from .deterministic import build_report_sources, render_markdown_report
 
 TModel = TypeVar("TModel", bound=BaseModel)
 

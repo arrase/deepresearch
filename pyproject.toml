@@ -24,20 +24,12 @@ dev = [
 ]
 
 [project.scripts]
-deepresearch = "main:cli"
+deepresearch = "deepresearch.main:cli"
 
 [tool.setuptools]
-py-modules = [
-    "config",
-    "context_manager",
-    "graph",
-    "main",
-    "nodes",
-    "state",
-    "telemetry",
-    "tools",
-]
-packages = ["subagents"]
+
+[tool.setuptools.packages.find]
+include = ["deepresearch*"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

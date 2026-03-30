@@ -1,4 +1,4 @@
-from state import build_initial_state
+from deepresearch.state import build_initial_state
 
 
 def test_build_initial_state_has_required_fields() -> None:

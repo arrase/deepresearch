@@ -1,8 +1,8 @@
-from config import ResearchConfig
-from context_manager import ContextManager
-from graph import build_graph
-from nodes import ResearchRuntime
-from state import (
+from deepresearch.config import ResearchConfig
+from deepresearch.context_manager import ContextManager
+from deepresearch.graph import build_graph
+from deepresearch.nodes import ResearchRuntime
+from deepresearch.state import (
     BrowserPageStatus,
     BrowserResult,
     ConfidenceLevel,
@@ -12,7 +12,7 @@ from state import (
     Subquery,
     build_initial_state,
 )
-from telemetry import TelemetryRecorder
+from deepresearch.telemetry import TelemetryRecorder
 
 
 class FakeSearchClient:

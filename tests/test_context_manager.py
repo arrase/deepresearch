@@ -1,6 +1,6 @@
-from config import ResearchConfig
-from context_manager import ContextManager
-from state import AtomicEvidence, Subquery, build_initial_state
+from deepresearch.config import ResearchConfig
+from deepresearch.context_manager import ContextManager
+from deepresearch.state import AtomicEvidence, Subquery, build_initial_state
 
 
 def test_extractor_context_selects_relevant_evidence() -> None:

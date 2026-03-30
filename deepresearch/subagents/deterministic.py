@@ -13,7 +13,7 @@ from hashlib import sha1
 from typing import Iterable
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
-from state import (
+from ..state import (
     AtomicEvidence,
     BrowserPageStatus,
     FinalReport,

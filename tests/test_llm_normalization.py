@@ -1,5 +1,5 @@
-from config import ResearchConfig
-from subagents.llm import LLMWorkers, PlannerPayload, _salvage_evidence_payload
+from deepresearch.config import ResearchConfig
+from deepresearch.subagents.llm import LLMWorkers, PlannerPayload, _salvage_evidence_payload
 
 
 def test_normalize_planner_payload_handles_qwen_style_types() -> None:

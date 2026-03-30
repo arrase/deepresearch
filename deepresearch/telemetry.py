@@ -7,7 +7,7 @@ from pathlib import Path
 import sys
 from typing import Any
 
-from state import FinalReport, ResearchState, TelemetryEvent
+from .state import FinalReport, ResearchState, TelemetryEvent
 
 
 class TelemetryRecorder:

@@ -10,9 +10,9 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from config import ResearchConfig
-from state import AtomicEvidence, Gap, ResearchState, Subquery
-from subagents.deterministic import estimate_tokens, select_evidence_for_context
+from .config import ResearchConfig
+from .state import AtomicEvidence, Gap, ResearchState, Subquery
+from .subagents.deterministic import estimate_tokens, select_evidence_for_context
 
 
 class NodeContext(BaseModel):

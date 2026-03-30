@@ -5,9 +5,9 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass
 
-from config import ResearchConfig
-from context_manager import ContextManager
-from state import (
+from .config import ResearchConfig
+from .context_manager import ContextManager
+from .state import (
     AtomicEvidence,
     BrowserPageStatus,
     BrowserResult,
@@ -22,7 +22,7 @@ from state import (
     SourceVisit,
     Subquery,
 )
-from subagents.deterministic import (
+from .subagents.deterministic import (
     build_report_sources,
     compute_minimum_coverage,
     deduplicate_candidates,
@@ -35,7 +35,7 @@ from subagents.deterministic import (
     split_text,
     update_working_dossier,
 )
-from telemetry import TelemetryRecorder
+from .telemetry import TelemetryRecorder
 
 
 @dataclass

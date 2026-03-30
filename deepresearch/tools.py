@@ -17,9 +17,9 @@ import httpx
 from bs4 import BeautifulSoup
 from docker.errors import DockerException
 
-from config import BrowserConfig, ModelConfig, SearchConfig
-from state import BrowserPageStatus, BrowserResult, SearchCandidate
-from subagents.deterministic import (
+from .config import BrowserConfig, ModelConfig, SearchConfig
+from .state import BrowserPageStatus, BrowserResult, SearchCandidate
+from .subagents.deterministic import (
     canonicalize_url,
     classify_browser_payload,
     extract_domain,

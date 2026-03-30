@@ -546,14 +546,14 @@ No hagas ninguna de estas cosas:
 
 Genera el codigo de forma modular. Como minimo entrega:
 
-- state.py: esquemas TypedDict y modelos Pydantic del estado, evidencia y artefactos,
-- tools.py: integracion de Lightpanda y herramientas auxiliares de busqueda,
-- nodes.py: implementacion de nodos y logica LCEL,
-- subagents/deterministic.py o modulo equivalente: workers internos deterministas,
-- subagents/llm.py o modulo equivalente: workers internos basados en LLM,
-- subagents/__init__.py o modulo equivalente: contratos y registro de subagentes,
-- graph.py: ensamblaje del StateGraph, nodos, edges y compilacion,
-- main.py: punto de entrada con telemetria basica por ciclo.
+- deepresearch/state.py: esquemas TypedDict y modelos Pydantic del estado, evidencia y artefactos,
+- deepresearch/tools.py: integracion de Lightpanda y herramientas auxiliares de busqueda,
+- deepresearch/nodes.py: implementacion de nodos y logica LCEL,
+- deepresearch/subagents/deterministic.py o modulo equivalente: workers internos deterministas,
+- deepresearch/subagents/llm.py o modulo equivalente: workers internos basados en LLM,
+- deepresearch/subagents/__init__.py o modulo equivalente: contratos y registro de subagentes,
+- deepresearch/graph.py: ensamblaje del StateGraph, nodos, edges y compilacion,
+- deepresearch/main.py: punto de entrada con telemetria basica por ciclo.
 
 Si durante la implementacion detectas que una estructura distinta mejora la separacion de responsabilidades, puedes ampliarla, pero debes conservar esos contratos conceptuales.
 
