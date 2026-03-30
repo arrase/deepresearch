@@ -6,7 +6,7 @@ temperature_extractor = 0.0
 temperature_evaluator = 0.0
 temperature_synthesizer = 0.1
 num_ctx = 100000
-num_predict = 900
+num_predict = 8192
 timeout_seconds = 120
 
 [context]
@@ -32,12 +32,12 @@ request_timeout_seconds = 90
 [search]
 backend = "tavily"
 api_key = ""
-results_per_query = 5
-max_queries_per_cycle = 3
+results_per_query = 8
+max_queries_per_cycle = 5
 user_agent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
 
 [runtime]
-max_iterations = 8
+max_iterations = 10
 llm_retry_attempts = 2
 
 [prompts]

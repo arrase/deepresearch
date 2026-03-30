@@ -94,18 +94,20 @@ class LLMWorkers:
             strict_templates=config.prompts.strict_templates,
         )
 
-    def _llm(self, *, temperature: float) -> ChatOllama:
-        return ChatOllama(
-            model=self._model_config.model_name,
-            base_url=self._model_config.base_url,
-            disable_streaming=True,
-            reasoning=False,
-            temperature=temperature,
-            num_ctx=self._model_config.num_ctx,
-            num_predict=self._model_config.num_predict,
-            timeout=self._model_config.timeout_seconds,
-            format="json",
-        )
+    def _llm(self, *, temperature: float, json_format: bool = True) -> ChatOllama:
+        kwargs = {
+            "model": self._model_config.model_name,
+            "base_url": self._model_config.base_url,
+            "disable_streaming": True,
+            "reasoning": False,
+            "temperature": temperature,
+            "num_ctx": self._model_config.num_ctx,
+            "num_predict": self._model_config.num_predict,
+            "timeout": self._model_config.timeout_seconds,
+        }
+        if json_format:
+            kwargs["format"] = "json"
+        return ChatOllama(**kwargs)
 
     def _parse_response(
         self,
@@ -394,12 +396,15 @@ class LLMWorkers:
             f"- {item.claim} | source={item.source_title} | citation={item.citation_locator}"
             for item in context.evidentiary
         )
-        return self._parse_response(
-            prompt_name="extractor",
-            variables=variables,
-            schema=EvidencePayload,
-            temperature=self._model_config.temperature_extractor,
-        )
+        try:
+            return self._parse_response(
+                prompt_name="extractor",
+                variables=variables,
+                schema=EvidencePayload,
+                temperature=self._model_config.temperature_extractor,
+            )
+        except Exception:
+            return EvidencePayload()
 
     def evaluate_coverage(self, context: NodeContext) -> CoveragePayload:
         variables = context.model_dump()
@@ -407,18 +412,21 @@ class LLMWorkers:
             f"- {item.subquery_id}: {item.claim} | confidence={item.confidence.value}"
             for item in context.evidentiary
         )
-        payload = self._parse_response(
-            prompt_name="evaluator",
-            variables=variables,
-            schema=CoveragePayload,
-            temperature=self._model_config.temperature_evaluator,
-        )
-        for gap in payload.open_gaps:
-            if not gap.suggested_queries:
-                gap.suggested_queries = [gap.description]
-            if gap.severity not in {GapSeverity.LOW, GapSeverity.MEDIUM, GapSeverity.HIGH, GapSeverity.CRITICAL}:
-                gap.severity = GapSeverity.MEDIUM
-        return payload
+        try:
+            payload = self._parse_response(
+                prompt_name="evaluator",
+                variables=variables,
+                schema=CoveragePayload,
+                temperature=self._model_config.temperature_evaluator,
+            )
+            for gap in payload.open_gaps:
+                if not gap.suggested_queries:
+                    gap.suggested_queries = [gap.description]
+                if gap.severity not in {GapSeverity.LOW, GapSeverity.MEDIUM, GapSeverity.HIGH, GapSeverity.CRITICAL}:
+                    gap.severity = GapSeverity.MEDIUM
+            return payload
+        except Exception:
+            return CoveragePayload()
 
     def synthesize_report(self, context: NodeContext, *, query: str) -> FinalReport:
         variables = context.model_dump()
@@ -427,35 +435,39 @@ class LLMWorkers:
             f"- evidence_id={item.id} | subquery_id={item.subquery_id} | claim={item.claim} | source={item.source_title} | citation={item.citation_locator} | confidence={item.confidence.value} | caveats={'; '.join(item.caveats[:2])}"
             for item in context.evidentiary
         )
-        payload = self._parse_response(
-            prompt_name="synthesizer",
-            variables=variables,
-            schema=FinalReportPayload,
-            temperature=self._model_config.temperature_synthesizer,
+        prompt_pair = self._render_prompt_pair(
+            "synthesizer",
+            {**variables, "format_instructions": ""},
         )
+        llm = self._llm(
+            temperature=self._model_config.temperature_synthesizer,
+            json_format=False,
+        )
+        raw_text = str(llm.invoke(self._as_langchain_messages(prompt_pair)).content)
+
         evidence_ids = [item.id for item in context.evidentiary]
+        cited_sources = build_report_sources(context.evidentiary)
         report = FinalReport(
             query=query,
-            executive_answer=payload.executive_answer,
-            key_findings=payload.key_findings,
-            sections=payload.sections,
-            confidence=payload.confidence,
-            reservations=payload.reservations,
-            open_gaps=payload.open_gaps,
+            executive_answer="See detailed Markdown report below.",
+            key_findings=[],
+            sections=[],
+            confidence=ConfidenceLevel.MEDIUM,
+            reservations=[],
+            open_gaps=[],
             evidence_ids=evidence_ids,
-            cited_sources=build_report_sources(context.evidentiary),
+            cited_sources=cited_sources,
         )
-        if not report.sections and context.evidentiary:
-            report.sections = [
-                FinalReportPayload.SectionPayload(
-                    title="Primary analysis",
-                    summary=report.executive_answer,
-                    body="\n".join(f"- {item.claim}" for item in context.evidentiary[:4]),
-                    evidence_ids=[item.id for item in context.evidentiary[:4]],
-                    subquery_ids=[item.subquery_id for item in context.evidentiary[:4]],
-                )
-            ]
-        report.markdown_report = render_markdown_report(report)
+        
+        md = _strip_code_fences(raw_text)
+        
+        if cited_sources:
+            md += "\n\n## Referenced Sources\n\n"
+            for index, source in enumerate(cited_sources, start=1):
+                evidence_refs = ", ".join(source.evidence_ids) if source.evidence_ids else "no linked evidence"
+                md += f"{index}. [{source.title}]({source.url}) - Evidence IDs: {evidence_refs}\n"
+                
+        report.markdown_report = md
         return report
 
 

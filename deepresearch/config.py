@@ -168,8 +168,7 @@ class ResearchConfig(BaseModel):
         config_file_path = resolved_root / DEFAULT_CONFIG_FILENAME
         
         if not config_file_path.exists():
-            print(f"Error: No se encuentra la configuración en {resolved_root}", file=sys.stderr)
-            sys.exit(1)
+            bootstrap_config_root(resolved_root)
 
         raw_payload = tomllib.loads(config_file_path.read_text(encoding="utf-8"))
         config = cls.model_validate(raw_payload)
