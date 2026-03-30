@@ -306,7 +306,7 @@ class ResearchNodes:
             if subquery.id in target_subquery_ids:
                 query_terms.extend(subquery.search_terms or [subquery.question])
         chunks = split_text(browser_result.content)
-        selected_chunks = select_relevant_chunks(chunks, query_terms=query_terms, max_chunks=4)
+        selected_chunks = select_relevant_chunks(chunks, query_terms=query_terms, max_chunks=10)
         local_source = "\n\n".join(selected_chunks)[: self._runtime.config.browser.max_content_chars]
         telemetry = self._start_event(
             state,
@@ -430,13 +430,22 @@ class ResearchNodes:
         is_sufficient = False
         resolved_total = len(state["resolved_subqueries"]) + len(newly_resolved)
         minimum_report_evidence = 1 if resolved_total <= 1 else max(2, resolved_total)
+        
+        # Stop criteria logic:
+        # 1. All subqueries resolved and minimum evidence target met.
         if not remaining_active and len(state["atomic_evidence"]) >= minimum_report_evidence:
             is_sufficient = True
+        # 2. LLM evaluator explicitly signals sufficiency.
         elif semantic.is_sufficient and not remaining_active and len(state["atomic_evidence"]) >= minimum_report_evidence:
             is_sufficient = True
-        elif fallback_reason is not None and len(state["atomic_evidence"]) >= max(1, min(2, resolved_total or 1)):
+        # 3. We hit a fallback (search failure, no more sources) and have at least SOME evidence.
+        elif fallback_reason is not None and len(state["atomic_evidence"]) >= 1:
             is_sufficient = True
-        elif fallback_reason is not None and state["iteration"] >= state["max_iterations"]:
+        # 4. We hit a fallback and have no evidence, but we've tried enough or it's a terminal search failure.
+        elif fallback_reason in ("search_backend_failure", "no_actionable_sources") and state["iteration"] >= 2:
+            is_sufficient = True
+        # 5. Hard limit on iterations.
+        elif state["iteration"] >= state["max_iterations"]:
             is_sufficient = True
 
         event = self._runtime.telemetry.record(

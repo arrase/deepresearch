@@ -54,7 +54,7 @@ pytest
 ## Development Conventions
 
 - **State over History**: Never rely on LLM conversation history for state. All relevant information must be persisted in the `ResearchState`.
-- **Prompt Decoupling**: Do NOT use inline strings for LLM prompts. Always use the Jinja2 templates in `config/prompts/`.
+- **Prompt Decoupling**: Do NOT use inline strings for LLM prompts, format instructions, or any other text intended for the LLM. Always use the Jinja2 templates in `config/prompts/` to maintain a clear separation between logic and instructions.
 - **Deterministic Processing**: Use deterministic workers (in `deepresearch/subagents/deterministic.py`) for data cleanup, scoring, and deduplication to ensure consistency.
 - **Type Safety**: Use Pydantic models for data structures and maintain strict type hinting throughout the codebase.
 - **Telemetry**: Significant events are recorded via the `TelemetryRecorder` to console. Every run should produce a markdown report in the location specified by the user.

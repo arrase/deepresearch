@@ -30,7 +30,8 @@ min_partial_chars = 120
 request_timeout_seconds = 90
 
 [search]
-backend = "duckduckgo_lite"
+backend = "tavily"
+api_key = ""
 results_per_query = 5
 max_queries_per_cycle = 3
 user_agent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"

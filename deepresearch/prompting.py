@@ -39,6 +39,9 @@ class PromptTemplateLoader:
             human=self._render_template(f"{prompt_name}/human.j2", variables),
         )
 
+    def render_format(self, prompt_name: str, variables: dict[str, object]) -> str:
+        return self._render_template(f"{prompt_name}/format.j2", variables)
+
     def _render_template(self, template_name: str, variables: dict[str, object]) -> str:
         try:
             template = self._environment.get_template(template_name)

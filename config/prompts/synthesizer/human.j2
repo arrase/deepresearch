@@ -1,11 +1,21 @@
-Question: {{ query }}
+# ORIGINAL RESEARCH QUESTION
+{{ query }}
 
-Strategic context:
+# RESEARCH DOSSIER SUMMARY
 {{ strategic }}
 
-Evidence:
+# EVIDENTIARY CONTEXT (USE ONLY THIS TO BUILD THE REPORT)
 {{ evidentiary }}
 
-Task: {{ operational }}
-Write an executive answer, key findings, and thematic sections.
-Every section must cite existing evidence_ids.
+# YOUR TASK
+Produce a comprehensive research report following the provided JSON schema.
+
+### INSTRUCTIONS:
+- **Executive Answer**: Provide a 2-3 paragraph authoritative response that directly answers the research question. Be specific.
+- **Key Findings**: List the 3-5 most impactful, evidence-backed conclusions.
+- **Thematic Sections**: Create up to 4 sections that detail specific aspects of the research. Each section must have a descriptive title, a summary paragraph, and a detailed body.
+- **Citations**: Ensure every section includes a list of `evidence_ids` used in that section.
+- **Reservations**: Document any contradictions or low-confidence sources encountered.
+- **Open Gaps**: Specify what information is still missing despite the research effort.
+
+Begin synthesis now.

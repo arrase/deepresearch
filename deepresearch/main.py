@@ -14,19 +14,24 @@ from .nodes import ResearchRuntime
 from .state import build_initial_state
 from .subagents.llm import LLMWorkers
 from .telemetry import TelemetryRecorder
-from .tools import DuckDuckGoSearchClient, LightpandaDockerManager
+from .tools import DuckDuckGoSearchClient, LightpandaDockerManager, TavilySearchClient
 
 
 def build_runtime(config: ResearchConfig) -> ResearchRuntime:
     telemetry = TelemetryRecorder(
         echo_to_console=True,
     )
+    if config.search.backend == "tavily":
+        search_client = TavilySearchClient(config.search)
+    else:
+        search_client = DuckDuckGoSearchClient(config.search)
+
     return ResearchRuntime(
         config=config,
         context_manager=ContextManager(config),
         llm_workers=LLMWorkers(config),
         browser=LightpandaDockerManager(config.browser),
-        search_client=DuckDuckGoSearchClient(config.search),
+        search_client=search_client,
         telemetry=telemetry,
     )
 

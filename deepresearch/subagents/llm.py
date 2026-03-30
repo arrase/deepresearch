@@ -116,9 +116,10 @@ class LLMWorkers:
         temperature: float,
     ) -> TModel:
         parser = PydanticOutputParser(pydantic_object=schema)
+        format_instructions = self._load_format_instructions(prompt_name, variables)
         prompt_pair = self._render_prompt_pair(
             prompt_name,
-            {**variables, "format_instructions": self._compact_format_instructions(schema)},
+            {**variables, "format_instructions": format_instructions},
         )
         prompt_text = self._stringify_prompt(prompt_pair)
         llm = self._llm(temperature=temperature)
@@ -136,7 +137,7 @@ class LLMWorkers:
                 repair_pair = self._render_prompt_pair(
                     "repair",
                     {
-                        "format_instructions": self._compact_format_instructions(schema),
+                        "format_instructions": format_instructions,
                         "original_prompt": prompt_text,
                         "raw_output": raw_text,
                         "parse_error": last_error,
@@ -152,7 +153,6 @@ class LLMWorkers:
                 last_error = "repair_parse_failed"
             except Exception as exc:  # noqa: BLE001
                 last_error = str(exc)
-        self._dump_failed_output(schema, prompt_text, raw_text, last_error)
         raise ValueError(f"Failed to parse structured output: {last_error}")
 
     def _render_prompt_pair(self, prompt_name: str, variables: dict[str, Any]) -> PromptMessages:
@@ -194,48 +194,11 @@ class LLMWorkers:
             except Exception:  # noqa: BLE001
                 return None
 
-    def _compact_format_instructions(self, schema: type[TModel]) -> str:
-        instructions = {
-            PlannerPayload: (
-                'Return a JSON object with the keys: '
-                'subqueries=[{id,question,rationale,priority,evidence_target,success_criteria,search_terms}], '
-                'search_intents=[{query,rationale,subquery_ids}], hypotheses=[string]. '
-                'priority must be an integer 1-5, evidence_target must be an integer 1-4, success_criteria must be an array of short strings, '
-                'and subquery_ids must reference real subquery ids. '
-                'Keep everything brief: at most 3 subqueries, 3 search_intents, 2 success_criteria per subquery, and 2 search_terms per subquery. '
-                'Do not add text outside the JSON object.'
-            ),
-            EvidencePayload: (
-                'Return a JSON object with the key evidences=[{summary,claim,quotation,citation_locator,relevance_score,confidence,caveats,tags}]. '
-                'Keep the output brief: at most 3 evidence items and short caveats. '
-                'confidence must be low, medium, or high. Do not add text outside the JSON object.'
-            ),
-            CoveragePayload: (
-                'Return a JSON object with the keys resolved_subquery_ids=[string], contradictions=[{topic,statement_a,statement_b,evidence_ids,severity,note}], '
-                'open_gaps=[{subquery_id,description,severity,rationale,suggested_queries,actionable}], is_sufficient=bool, rationale=string. '
-                'severity must be low, medium, high, or critical. Do not add text outside the JSON object.'
-            ),
-            FinalReportPayload: (
-                'Return a JSON object with the keys executive_answer=string, key_findings=[string], confidence=low|medium|high, '
-                'reservations=[string], open_gaps=[string], '
-                'sections=[{title,summary,body,evidence_ids,subquery_ids}]. '
-                'Use at most 4 sections. Every section must cite evidence_ids that already exist in the input evidence. '
-                'Do not add text outside the JSON object.'
-            ),
-        }
-        return instructions.get(schema, 'Return valid JSON only, with no additional text.')
-
-    def _dump_failed_output(self, schema: type[TModel], prompt_text: str, raw_text: str, error: str) -> None:
-        target_dir = Path(self._runtime_config.logs_dir)
-        target_dir.mkdir(parents=True, exist_ok=True)
-        target = target_dir / f"llm_parse_failure_{schema.__name__}.json"
-        payload = {
-            "schema": schema.__name__,
-            "error": error,
-            "prompt": prompt_text,
-            "raw_output": raw_text,
-        }
-        target.write_text(json.dumps(payload, ensure_ascii=True, indent=2), encoding="utf-8")
+    def _load_format_instructions(self, prompt_name: str, variables: dict[str, Any]) -> str:
+        try:
+            return self._prompt_loader.render_format(prompt_name, variables)
+        except Exception:  # noqa: BLE001
+            return "Return valid JSON only, with no additional text."
 
     def _normalize_payload(self, schema: type[TModel], payload: Any) -> Any:
         if schema is PlannerPayload:

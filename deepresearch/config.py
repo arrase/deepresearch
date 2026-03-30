@@ -112,6 +112,7 @@ class SearchConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     backend: str = Field(default="duckduckgo_lite")
+    api_key: str | None = Field(default=None)
     results_per_query: int = Field(default=5, ge=1, le=20)
     max_queries_per_cycle: int = Field(default=3, ge=1, le=10)
     user_agent: str = Field(
