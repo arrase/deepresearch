@@ -1,9 +1,8 @@
-"""Contratos y registro explicito de subagentes internos.
+"""Explicit contracts and registry for internal subagents.
 
-Cada subagente declara si es determinista o basado en LLM, junto con sus
-entradas y salidas. El objetivo es hacer visible por que una tarea usa o no un
-modelo y evitar que la comodidad de implementacion sustituya una decision de
-arquitectura.
+Each subagent declares whether it is deterministic or LLM-based, together with
+its inputs and outputs. The goal is to make the architectural choice explicit
+instead of letting implementation convenience decide it implicitly.
 """
 
 from __future__ import annotations
@@ -32,34 +31,34 @@ SUBAGENT_REGISTRY: dict[str, SubagentContract] = {
         kind=SubagentKind.DETERMINISTIC,
         inputs=("url",),
         outputs=("canonical_url",),
-        rationale="La canonizacion y deduplicacion de URLs es una tarea mecanica y fiable sin LLM.",
+        rationale="URL canonicalization and deduplication are mechanical tasks that are reliable without an LLM.",
     ),
     "candidate_ranker": SubagentContract(
         name="candidate_ranker",
         kind=SubagentKind.DETERMINISTIC,
         inputs=("candidate", "subqueries", "visited_urls"),
         outputs=("score", "reasons"),
-        rationale="El ranking heuristico inicial puede resolverse con reglas transparentes y auditables.",
+        rationale="Initial heuristic ranking can be resolved with transparent and auditable rules.",
     ),
     "planner": SubagentContract(
         name="planner",
         kind=SubagentKind.LLM,
         inputs=("query", "context_window_config"),
         outputs=("subqueries", "search_intents", "hypotheses"),
-        rationale="Descomponer preguntas abiertas y generar agenda requiere interpretacion semantica.",
+        rationale="Decomposing open-ended questions and producing an agenda requires semantic interpretation.",
     ),
     "evidence_extractor": SubagentContract(
         name="evidence_extractor",
         kind=SubagentKind.LLM,
         inputs=("source_fragment", "target_subquery", "context"),
         outputs=("atomic_evidence",),
-        rationale="La extraccion flexible de hechos y reservas desde texto natural requiere interpretacion controlada.",
+        rationale="Flexible extraction of facts and caveats from natural language requires controlled interpretation.",
     ),
     "coverage_evaluator": SubagentContract(
         name="coverage_evaluator",
         kind=SubagentKind.LLM,
         inputs=("working_dossier", "subqueries", "evidence"),
         outputs=("coverage_assessment", "gaps", "contradictions"),
-        rationale="La deteccion de huecos no triviales y contradicciones sutiles puede necesitar compresion semantica.",
+        rationale="Detecting non-trivial gaps and subtle contradictions can require semantic compression.",
     ),
 }

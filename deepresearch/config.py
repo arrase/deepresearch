@@ -1,25 +1,67 @@
-"""Configuracion tipada del sistema de investigacion.
+"""Typed application configuration and bootstrap helpers.
 
-La configuracion centraliza el presupuesto de contexto, parametros del modelo y
-politicas operativas. El objetivo es que los nodos no introduzcan presupuestos
-propios de forma ad hoc: cada etapa consulta esta configuracion y adapta su
-seleccion de contexto al tamano declarado por el usuario.
+The configuration layer owns model parameters, context policy, prompt asset
+discovery, and runtime limits. Nodes consume these validated settings instead
+of inventing stage-specific defaults at call sites.
 """
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
+import shutil
+import tomllib
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
+
+
+DEFAULT_CONFIG_ENV_VAR = "DEEPRESEARCH_CONFIG_ROOT"
+DEFAULT_CONFIG_FILENAME = "config.toml"
+
+
+def default_config_root() -> Path:
+    return Path(__file__).resolve().parent.parent / "config"
+
+
+def resolve_config_root(override: str | Path | None = None) -> Path:
+    if override is not None:
+        return Path(override).expanduser().resolve()
+    env_value = os.getenv(DEFAULT_CONFIG_ENV_VAR)
+    if env_value:
+        return Path(env_value).expanduser().resolve()
+    return default_config_root().resolve()
+
+
+def bootstrap_config_root(config_root: Path) -> None:
+    """Materialize an editable config tree from the project defaults when needed."""
+
+    source_root = default_config_root().resolve()
+    config_root = config_root.resolve()
+    config_root.mkdir(parents=True, exist_ok=True)
+    if config_root == source_root:
+        return
+    _copy_default_asset(source_root / DEFAULT_CONFIG_FILENAME, config_root / DEFAULT_CONFIG_FILENAME)
+    _copy_default_tree(source_root / "prompts", config_root / "prompts")
+
+
+def _copy_default_tree(source: Path, target: Path) -> None:
+    if source.is_dir():
+        target.mkdir(parents=True, exist_ok=True)
+        for child in source.iterdir():
+            _copy_default_tree(child, target / child.name)
+        return
+    _copy_default_asset(source, target)
+
+
+def _copy_default_asset(source: Path, target: Path) -> None:
+    if target.exists():
+        return
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(source, target)
 
 
 class ModelConfig(BaseModel):
-    """Configuracion de ChatOllama optimizada para modelos pequenos.
-
-    La ventana se expone como parametro de usuario. El valor por defecto sigue
-    el requisito operativo del proyecto: qwen3.5:9b con 100000 tokens de
-    contexto objetivo.
-    """
+    """ChatOllama settings tuned for smaller local models."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -35,12 +77,12 @@ class ModelConfig(BaseModel):
 
 
 class ContextPolicyConfig(BaseModel):
-    """Presupuesto global del contexto y reglas de seleccion."""
+    """Global context budget and deterministic selection policy."""
 
     model_config = ConfigDict(extra="forbid")
 
     target_tokens: int = Field(default=100000, ge=4096)
-    configured_by: str = Field(default="cli")
+    configured_by: str = Field(default="config_file")
     selection_policy: str = Field(default="hierarchical_relevance_first")
     evidence_budget_ratio: float = Field(default=0.45, gt=0.0, lt=1.0)
     dossier_budget_ratio: float = Field(default=0.30, gt=0.0, lt=1.0)
@@ -49,7 +91,7 @@ class ContextPolicyConfig(BaseModel):
 
 
 class BrowserConfig(BaseModel):
-    """Configuracion del runtime de Lightpanda gestionado por Docker."""
+    """Runtime settings for the Docker-managed Lightpanda browser."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -65,11 +107,11 @@ class BrowserConfig(BaseModel):
 
 
 class SearchConfig(BaseModel):
-    """Configuracion del descubrimiento inicial de fuentes."""
+    """Search backend and discovery settings."""
 
     model_config = ConfigDict(extra="forbid")
 
-    backend: str = Field(default="duckduckgo_html")
+    backend: str = Field(default="duckduckgo_lite")
     results_per_query: int = Field(default=5, ge=1, le=20)
     max_queries_per_cycle: int = Field(default=3, ge=1, le=10)
     user_agent: str = Field(
@@ -81,10 +123,7 @@ class SearchConfig(BaseModel):
 
 
 class RuntimeConfig(BaseModel):
-    """Limites tecnicos y rutas de artefactos.
-
-    Los limites existen como salvaguarda, no como criterio principal de parada.
-    """
+    """Technical safeguards and output locations."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -95,8 +134,17 @@ class RuntimeConfig(BaseModel):
     llm_retry_attempts: int = Field(default=2, ge=0, le=5)
 
 
+class PromptConfig(BaseModel):
+    """Prompt directory and template rendering settings."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    directory: Path = Field(default=Path("prompts"))
+    strict_templates: bool = Field(default=True)
+
+
 class ResearchConfig(BaseModel):
-    """Configuracion raiz consumida por el runtime del grafo."""
+    """Root configuration consumed by the research runtime."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -105,6 +153,35 @@ class ResearchConfig(BaseModel):
     browser: BrowserConfig = Field(default_factory=BrowserConfig)
     search: SearchConfig = Field(default_factory=SearchConfig)
     runtime: RuntimeConfig = Field(default_factory=RuntimeConfig)
+    prompts: PromptConfig = Field(default_factory=PromptConfig)
+
+    _config_root: Path = PrivateAttr(default_factory=default_config_root)
+    _config_file_path: Path = PrivateAttr(default_factory=lambda: default_config_root() / DEFAULT_CONFIG_FILENAME)
+
+    @classmethod
+    def load(cls, *, config_root: str | Path | None = None) -> ResearchConfig:
+        resolved_root = resolve_config_root(config_root)
+        bootstrap_config_root(resolved_root)
+        config_file_path = resolved_root / DEFAULT_CONFIG_FILENAME
+        raw_payload = tomllib.loads(config_file_path.read_text(encoding="utf-8"))
+        config = cls.model_validate(raw_payload)
+        config._config_root = resolved_root
+        config._config_file_path = config_file_path
+        return config
+
+    @property
+    def config_root(self) -> Path:
+        return self._config_root
+
+    @property
+    def config_file_path(self) -> Path:
+        return self._config_file_path
+
+    @property
+    def prompts_dir(self) -> Path:
+        if self.prompts.directory.is_absolute():
+            return self.prompts.directory
+        return self._config_root / self.prompts.directory
 
     def ensure_directories(self) -> None:
         self.runtime.artifacts_dir.mkdir(parents=True, exist_ok=True)

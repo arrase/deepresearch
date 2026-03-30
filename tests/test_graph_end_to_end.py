@@ -40,6 +40,16 @@ class FakeBrowser:
         )
 
 
+class FailIfCalledBrowser:
+    def fetch(self, url: str) -> BrowserResult:
+        raise AssertionError(f"Browser should not be called for url={url}")
+
+
+class EmptySearchClient:
+    def search(self, query: str, *, max_results: int | None = None):
+        return []
+
+
 class FakeLLMWorkers:
     def plan_research(self, context):
         subquery = Subquery(
@@ -126,7 +136,7 @@ def test_graph_runs_end_to_end_with_fakes(tmp_path) -> None:
     result = graph.invoke(initial_state)
     assert result["final_report"] is not None
     assert result["final_report"].executive_answer.startswith("Fusion demand increased")
-    assert result["final_report"].markdown_report.startswith("# Informe de investigacion")
+    assert result["final_report"].markdown_report.startswith("# Research Report")
     assert result["atomic_evidence"]
 
 
@@ -156,4 +166,33 @@ def test_markdown_report_is_persisted_as_artifact(tmp_path) -> None:
     assert final_report is not None
     target = runtime.telemetry.write_markdown_report(final_report, label="test_report")
     assert target.exists()
-    assert "## Resumen ejecutivo" in target.read_text(encoding="utf-8")
+    assert "## Executive Summary" in target.read_text(encoding="utf-8")
+
+
+def test_graph_routes_directly_to_evaluator_when_no_candidate_exists(tmp_path) -> None:
+    config = ResearchConfig()
+    config.runtime.artifacts_dir = tmp_path / "artifacts"
+    config.runtime.logs_dir = tmp_path / "logs"
+    config.runtime.max_iterations = 1
+    config.ensure_directories()
+    runtime = ResearchRuntime(
+        config=config,
+        context_manager=ContextManager(config),
+        llm_workers=FakeLLMWorkers(),
+        browser=FailIfCalledBrowser(),
+        search_client=EmptySearchClient(),
+        telemetry=TelemetryRecorder(artifacts_dir=config.runtime.artifacts_dir, logs_dir=config.runtime.logs_dir),
+    )
+    graph = build_graph(runtime)
+    initial_state = build_initial_state(
+        "What is happening to fusion demand?",
+        max_iterations=1,
+        target_tokens=100000,
+        configured_by="test",
+        selection_policy="hierarchical_relevance_first",
+    )
+
+    result = graph.invoke(initial_state)
+
+    assert result["final_report"] is not None
+    assert result["atomic_evidence"] == []

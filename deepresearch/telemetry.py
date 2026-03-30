@@ -1,4 +1,4 @@
-"""Telemetria y checkpoints auditables."""
+"""Auditable telemetry and checkpoints."""
 
 from __future__ import annotations
 

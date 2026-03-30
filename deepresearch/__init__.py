@@ -1,1 +1,1 @@
-"""Paquete principal de la aplicacion deepresearch."""
+"""Main package for the deepresearch application."""

@@ -1,9 +1,9 @@
-"""Gestor de contexto jerarquico.
+"""Hierarchical context manager.
 
-Cada nodo consume una proyeccion minima del estado. La seleccion es
-determinista primero: subpreguntas activas, huecos accionables y evidencias mas
- relevantes. Cuando el dossier crezca, el runtime podra aplicar compresion
-semantica adicional sin cambiar este contrato.
+Each node consumes a minimal projection of state. Selection is deterministic
+first: active subqueries, actionable gaps, and the most relevant evidence. As
+the dossier grows, the runtime can add semantic compression without changing
+this contract.
 """
 
 from __future__ import annotations
@@ -30,14 +30,18 @@ class ContextManager:
         self._config = config
 
     def _render_subqueries(self, subqueries: list[Subquery]) -> str:
+        if not subqueries:
+            return "- None"
         return "\n".join(
-            f"- {item.id}: {item.question} | criterios={'; '.join(item.success_criteria[:3])}"
+            f"- {item.id}: {item.question} | criteria={'; '.join(item.success_criteria[:3])}"
             for item in subqueries
         )
 
     def _render_gaps(self, gaps: list[Gap]) -> str:
+        if not gaps:
+            return "- None"
         return "\n".join(
-            f"- {gap.subquery_id}: {gap.description} | consultas={', '.join(gap.suggested_queries[:3])}"
+            f"- {gap.subquery_id}: {gap.description} | suggested_queries={', '.join(gap.suggested_queries[:3])}"
             for gap in gaps[:5]
         )
 
@@ -46,10 +50,10 @@ class ContextManager:
 
     def planner_context(self, state: ResearchState) -> NodeContext:
         return NodeContext(
-            permanent=f"Pregunta principal: {state['query']}",
-            strategic="Aun no hay subpreguntas. Debes producir agenda inicial.",
+            permanent=f"Primary question: {state['query']}",
+            strategic="No subqueries exist yet. You must produce the initial agenda.",
             operational=(
-                "Descompone la pregunta en subpreguntas concretas, hipotesis de trabajo y consultas de busqueda iniciales."
+                "Decompose the question into concrete subqueries, working hypotheses, and initial search queries."
             ),
         )
 
@@ -66,12 +70,12 @@ class ContextManager:
             budget_tokens=self._budget(self._config.context.evidence_budget_ratio),
         )
         return NodeContext(
-            permanent=f"Pregunta principal: {state['query']}",
+            permanent=f"Primary question: {state['query']}",
             strategic=(
-                f"Subpreguntas activas:\n{self._render_subqueries(state['active_subqueries'])}\n"
-                f"Huecos:\n{self._render_gaps(state['open_gaps'])}"
+                f"Active subqueries:\n{self._render_subqueries(state['active_subqueries'])}\n"
+                f"Open gaps:\n{self._render_gaps(state['open_gaps'])}"
             ).strip(),
-            operational="Extrae evidencia atomica trazable sin inferir mas alla del texto.",
+            operational="Extract traceable atomic evidence without inferring beyond the source text.",
             evidentiary=evidence,
             local_source=local_source,
         )
@@ -83,15 +87,15 @@ class ContextManager:
             budget_tokens=self._budget(self._config.context.evidence_budget_ratio),
         )
         strategic = (
-            f"Subpreguntas activas:\n{self._render_subqueries(state['active_subqueries'])}\n"
-            f"Subpreguntas resueltas:\n{self._render_subqueries(state['resolved_subqueries'])}\n"
-            f"Huecos:\n{self._render_gaps(state['open_gaps'])}"
+            f"Active subqueries:\n{self._render_subqueries(state['active_subqueries'])}\n"
+            f"Resolved subqueries:\n{self._render_subqueries(state['resolved_subqueries'])}\n"
+            f"Open gaps:\n{self._render_gaps(state['open_gaps'])}"
         ).strip()
         operational = (
-            "Evalua cobertura, contradicciones y suficiencia. No cierres la investigacion si la evidencia no sostiene la respuesta."
+            "Evaluate coverage, contradictions, and sufficiency. Do not stop the research if the evidence does not support the answer."
         )
         return NodeContext(
-            permanent=f"Pregunta principal: {state['query']}",
+            permanent=f"Primary question: {state['query']}",
             strategic=strategic,
             operational=operational,
             evidentiary=evidence,
@@ -119,21 +123,21 @@ class ContextManager:
         dossier = "\n\n".join(
             block
             for block in (
-                f"Resumen global:\n{state['working_dossier'].global_summary}",
-                f"Cobertura por subpregunta:\n{joined_subquery_blocks}" if joined_subquery_blocks else "",
-                f"Contradicciones detectadas:\n{contradictions}" if contradictions else "",
-                f"Huecos abiertos:\n{gaps}" if gaps else "",
+                f"Global summary:\n{state['working_dossier'].global_summary}",
+                f"Coverage by subquery:\n{joined_subquery_blocks}" if joined_subquery_blocks else "",
+                f"Detected contradictions:\n{contradictions}" if contradictions else "",
+                f"Open gaps:\n{gaps}" if gaps else "",
             )
             if block
         )
         if estimate_tokens(dossier) > budget:
             dossier = dossier[: budget * 4]
         return NodeContext(
-            permanent=f"Pregunta principal: {state['query']}",
+            permanent=f"Primary question: {state['query']}",
             strategic=dossier,
             operational=(
-                "Redacta un informe final en Markdown conceptual con resumen ejecutivo, analisis por temas, confianza, reservas, huecos y citas. "
-                "Cada bloque debe apoyarse solo en evidencia relevante."
+                "Write a final conceptual Markdown report with an executive summary, thematic analysis, confidence, reservations, gaps, and citations. "
+                "Every block must rely only on relevant evidence."
             ),
             evidentiary=evidence,
         )

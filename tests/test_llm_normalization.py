@@ -4,7 +4,7 @@ from deepresearch.subagents.llm import LLMWorkers, PlannerPayload, _salvage_evid
 
 def test_normalize_planner_payload_handles_qwen_style_types() -> None:
     config = ResearchConfig()
-    workers = LLMWorkers(config.model, config.runtime)
+    workers = LLMWorkers(config)
     payload = {
         "subqueries": [
             {

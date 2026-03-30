@@ -7,13 +7,13 @@ def test_extractor_context_selects_relevant_evidence() -> None:
     config = ResearchConfig()
     manager = ContextManager(config)
     state = build_initial_state(
-        "Pregunta principal",
+        "Primary question",
         max_iterations=4,
         target_tokens=100000,
         configured_by="test",
         selection_policy="hierarchical_relevance_first",
     )
-    subquery = Subquery(question="Subpregunta", rationale="r", search_terms=["fusion"])
+    subquery = Subquery(question="Subquery", rationale="r", search_terms=["fusion"])
     state["active_subqueries"] = [subquery]
     state["atomic_evidence"] = [
         AtomicEvidence(
@@ -26,6 +26,6 @@ def test_extractor_context_selects_relevant_evidence() -> None:
             citation_locator="p2",
         )
     ]
-    context = manager.extractor_context(state, target_subquery_ids=[subquery.id], local_source="Contenido")
+    context = manager.extractor_context(state, target_subquery_ids=[subquery.id], local_source="Content")
     assert context.evidentiary
-    assert context.local_source == "Contenido"
+    assert context.local_source == "Content"

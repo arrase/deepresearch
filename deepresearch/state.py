@@ -1,8 +1,8 @@
-"""Estado estructurado y modelos de evidencia del sistema.
+"""Structured state and evidence models for the research system.
 
-El estado no es una bolsa de texto. Cada campo existe para soportar decisiones
-del grafo y mantener trazabilidad entre consulta, evidencias, fuentes visitadas
-y reporte final.
+The state is not a bag of text. Every field exists to support graph decisions
+and maintain traceability between the query, evidence, visited sources, and the
+final report.
 """
 
 from __future__ import annotations

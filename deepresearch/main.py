@@ -1,4 +1,4 @@
-"""CLI del sistema de deep research."""
+"""CLI entrypoint for the deep research system."""
 
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ def build_runtime(config: ResearchConfig) -> ResearchRuntime:
     return ResearchRuntime(
         config=config,
         context_manager=ContextManager(config),
-        llm_workers=LLMWorkers(config.model, config.runtime),
+        llm_workers=LLMWorkers(config),
         browser=LightpandaDockerManager(config.browser),
         search_client=DuckDuckGoSearchClient(config.search),
         telemetry=telemetry,
@@ -35,38 +35,55 @@ def build_runtime(config: ResearchConfig) -> ResearchRuntime:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Deep research auditable con LangGraph, Ollama y Lightpanda")
+    parser = argparse.ArgumentParser(description="Auditable deep research with LangGraph, Ollama, and Lightpanda")
     subparsers = parser.add_subparsers(dest="command", required=False)
 
-    run_parser = subparsers.add_parser("run", help="Ejecuta una investigacion")
-    run_parser.add_argument("query", help="Pregunta de investigacion abierta")
-    run_parser.add_argument("--model", default="qwen3.5:9b")
-    run_parser.add_argument("--num-ctx", type=int, default=100000)
-    run_parser.add_argument("--max-iterations", type=int, default=8)
-    run_parser.add_argument("--artifacts-dir", default="artifacts")
-    run_parser.add_argument("--logs-dir", default="logs")
+    run_parser = subparsers.add_parser("run", help="Run a research session")
+    run_parser.add_argument("query", help="Open-ended research question")
+    run_parser.add_argument("--config-root", default=None, help="Path to the editable config root")
+    run_parser.add_argument("--model", default=None)
+    run_parser.add_argument("--num-ctx", type=int, default=None)
+    run_parser.add_argument("--max-iterations", type=int, default=None)
+    run_parser.add_argument("--artifacts-dir", default=None)
+    run_parser.add_argument("--logs-dir", default=None)
     run_parser.add_argument("--skip-self-check", action="store_true")
     run_parser.add_argument("--quiet", action="store_true")
 
-    check_parser = subparsers.add_parser("self-check", help="Valida Ollama, Docker y Lightpanda")
-    check_parser.add_argument("--model", default="qwen3.5:9b")
-    check_parser.add_argument("--num-ctx", type=int, default=100000)
+    check_parser = subparsers.add_parser("self-check", help="Validate Ollama, Docker, and Lightpanda")
+    check_parser.add_argument("--config-root", default=None, help="Path to the editable config root")
+    check_parser.add_argument("--model", default=None)
+    check_parser.add_argument("--num-ctx", type=int, default=None)
 
     return parser.parse_args()
+
+
+def apply_cli_overrides(config: ResearchConfig, args: argparse.Namespace) -> None:
+    applied_override = False
+    if getattr(args, "model", None) is not None:
+        config.model.model_name = args.model
+        applied_override = True
+    if getattr(args, "num_ctx", None) is not None:
+        config.model.num_ctx = args.num_ctx
+        config.context.target_tokens = args.num_ctx
+        applied_override = True
+    if getattr(args, "max_iterations", None) is not None:
+        config.runtime.max_iterations = args.max_iterations
+        applied_override = True
+    if getattr(args, "artifacts_dir", None) is not None:
+        config.runtime.artifacts_dir = Path(args.artifacts_dir)
+        applied_override = True
+    if getattr(args, "logs_dir", None) is not None:
+        config.runtime.logs_dir = Path(args.logs_dir)
+        applied_override = True
+    if getattr(args, "config_root", None) is not None or applied_override:
+        config.context.configured_by = "cli_override"
 
 
 def cli() -> int:
     args = parse_args()
     command = args.command or "run"
-    config = ResearchConfig()
-    config.model.model_name = getattr(args, "model", config.model.model_name)
-    config.model.num_ctx = getattr(args, "num_ctx", config.model.num_ctx)
-    if hasattr(args, "max_iterations"):
-        config.runtime.max_iterations = args.max_iterations
-    if hasattr(args, "artifacts_dir"):
-        config.runtime.artifacts_dir = Path(args.artifacts_dir)
-    if hasattr(args, "logs_dir"):
-        config.runtime.logs_dir = Path(args.logs_dir)
+    config = ResearchConfig.load(config_root=getattr(args, "config_root", None))
+    apply_cli_overrides(config, args)
 
     runtime = build_runtime(config)
     if getattr(args, "quiet", False):
@@ -74,8 +91,9 @@ def cli() -> int:
     else:
         print(
             (
-                f"Iniciando deep research con modelo={config.model.model_name}, "
-                f"num_ctx={config.model.num_ctx}, max_iterations={config.runtime.max_iterations}"
+                f"Starting deep research with model={config.model.model_name}, "
+                f"num_ctx={config.model.num_ctx}, max_iterations={config.runtime.max_iterations}, "
+                f"config_root={config.config_root}"
             ),
             file=sys.stderr,
             flush=True,
@@ -86,7 +104,7 @@ def cli() -> int:
         return 0 if report.docker_ok and report.ollama_ok and report.model_available else 1
 
     if not getattr(args, "skip_self_check", False):
-        print("Self-check operativo completado, iniciando grafo...", file=sys.stderr, flush=True)
+        print("Operational self-check completed, starting graph...", file=sys.stderr, flush=True)
         if not report.docker_ok or not report.ollama_ok or not report.model_available:
             print(json.dumps(report.__dict__, indent=2, ensure_ascii=True))
             return 1
@@ -102,13 +120,13 @@ def cli() -> int:
     final_state = graph.invoke(initial_state)
     final_report = final_state.get("final_report")
     if final_report is None:
-        print(json.dumps({"error": "No se pudo generar informe final"}, indent=2, ensure_ascii=True))
+        print(json.dumps({"error": "Failed to generate final report"}, indent=2, ensure_ascii=True))
         return 2
     markdown_path = runtime.telemetry.write_markdown_report(final_report, label="final_report")
     final_report.markdown_artifact_path = str(markdown_path)
     checkpoint_path = runtime.telemetry.checkpoint(final_state, label="final")
     print(
-        f"Informe final generado. Markdown: {markdown_path} | Checkpoint: {checkpoint_path}",
+        f"Final report generated. Markdown: {markdown_path} | Checkpoint: {checkpoint_path}",
         file=sys.stderr,
         flush=True,
     )

@@ -1,15 +1,16 @@
-"""Integraciones externas: Lightpanda y descubrimiento de fuentes.
+"""External integrations: Lightpanda and web-source discovery.
 
-Lightpanda se gestiona mediante Docker SDK desde el arranque para cumplir el
-requisito operativo de descargar la imagen del navegador al iniciar la
-aplicacion. El adaptador usa una ejecucion determinista del comando fetch,
-clasifica resultados tecnicos y devuelve un BrowserResult estable para el grafo.
+Lightpanda is managed through the Docker SDK so the browser image can be
+bootstrapped at startup. The adapter runs a deterministic fetch command,
+classifies technical outcomes, and returns a stable BrowserResult to the graph.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
+import re
+import unicodedata
 from urllib.parse import parse_qs, urljoin, urlparse
 
 import docker
@@ -28,7 +29,7 @@ from .subagents.deterministic import (
 
 
 class SelfCheckError(RuntimeError):
-    """Error operativo recuperable detectado durante el self-check."""
+    """Recoverable operational error detected during self-check."""
 
 
 @dataclass
@@ -41,7 +42,7 @@ class SelfCheckReport:
 
 
 class DuckDuckGoSearchClient:
-    """Backend inicial de descubrimiento de fuentes sin API key."""
+    """Initial source discovery backend that does not require an API key."""
 
     def __init__(self, config: SearchConfig) -> None:
         self._config = config
@@ -53,24 +54,49 @@ class DuckDuckGoSearchClient:
 
     def search(self, query: str, *, max_results: int | None = None) -> list[SearchCandidate]:
         target_max = max_results or self._config.results_per_query
-        response = self._client.get(
-            "https://duckduckgo.com/html/",
-            params={"q": query},
-        )
-        response.raise_for_status()
-        soup = BeautifulSoup(response.text, "html.parser")
+        attempts = [query]
+        normalized_query = _normalize_search_query(query)
+        if normalized_query and normalized_query != query:
+            attempts.append(normalized_query)
+
+        saw_anomaly = False
+        for attempt_query in attempts:
+            response = self._client.get(
+                "https://lite.duckduckgo.com/lite/",
+                params={"q": attempt_query},
+            )
+            response.raise_for_status()
+            if _is_duckduckgo_anomaly_page(response.text):
+                saw_anomaly = True
+                continue
+            candidates = self._parse_lite_results(response.text, max_results=target_max)
+            if candidates:
+                return candidates
+
+        if saw_anomaly:
+            raise SelfCheckError("DuckDuckGo returned an anomaly challenge instead of search results")
+        return []
+
+    def _parse_lite_results(self, html: str, *, max_results: int) -> list[SearchCandidate]:
+        soup = BeautifulSoup(html, "html.parser")
         candidates: list[SearchCandidate] = []
-        for result in soup.select("div.result"):
-            anchor = result.select_one("a.result__a")
+        rows = [row for row in soup.select("tr") if row.get_text(" ", strip=True)]
+        row_index = 0
+        while row_index < len(rows) and len(candidates) < max_results:
+            row = rows[row_index]
+            anchor = row.select_one("a.result-link")
             if anchor is None:
+                row_index += 1
                 continue
             raw_href = anchor.get("href", "").strip()
             url = self._resolve_result_url(raw_href)
-            if not url.startswith("http"):
-                continue
-            snippet_node = result.select_one("a.result__snippet, div.result__snippet")
             title = anchor.get_text(" ", strip=True)
-            snippet = snippet_node.get_text(" ", strip=True) if snippet_node else ""
+            snippet = ""
+            if row_index + 1 < len(rows):
+                snippet = rows[row_index + 1].get_text(" ", strip=True)
+            if not url.startswith("http"):
+                row_index += 1
+                continue
             candidates.append(
                 SearchCandidate(
                     url=canonicalize_url(url),
@@ -80,8 +106,7 @@ class DuckDuckGoSearchClient:
                     source_type="search_result",
                 )
             )
-            if len(candidates) >= target_max:
-                break
+            row_index += 3
         return candidates
 
     def _resolve_result_url(self, href: str) -> str:
@@ -96,13 +121,27 @@ class DuckDuckGoSearchClient:
         return absolute
 
 
-class LightpandaDockerManager:
-    """Wrapper determinista sobre Lightpanda ejecutado en Docker.
+def _is_duckduckgo_anomaly_page(content: str) -> bool:
+    lowered = content.lower()
+    return "anomaly.js" in lowered or "challenge-form" in lowered or "botnet" in lowered
 
-    Se usa el comando fetch del contenedor oficial porque devuelve una
-    representacion textual ya estabilizada por el navegador. El manager mantiene
-    el contrato aislado de Docker para que el resto del sistema solo vea
-    BrowserResult clasificados.
+
+def _normalize_search_query(query: str) -> str:
+    ascii_text = unicodedata.normalize("NFKD", query).encode("ascii", "ignore").decode("ascii")
+    ascii_text = re.sub(r"[^A-Za-z0-9\s.-]", " ", ascii_text)
+    ascii_text = re.sub(r"\s+", " ", ascii_text).strip()
+    if not ascii_text:
+        return ""
+    terms = ascii_text.split()
+    return " ".join(terms[:12])
+
+
+class LightpandaDockerManager:
+    """Deterministic wrapper around Lightpanda running in Docker.
+
+    The official container fetch command is used because it returns text already
+    stabilized by the browser. The manager isolates Docker so the rest of the
+    system only sees classified BrowserResult objects.
     """
 
     def __init__(self, config: BrowserConfig) -> None:

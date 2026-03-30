@@ -1,4 +1,4 @@
-"""Nodos del grafo de investigacion y runtime compartido."""
+"""Research graph nodes and shared runtime dependencies."""
 
 from __future__ import annotations
 
@@ -62,14 +62,14 @@ class ResearchNodes:
         telemetry = self._start_event(
             state,
             "planner",
-            "Iniciando planificacion con LLM",
+            "Starting planning with the LLM",
             query=state["query"][:120],
         )
         context = self._runtime.context_manager.planner_context(state)
         payload = self._runtime.llm_workers.plan_research(context)
         event = self._runtime.telemetry.record(
             "planner",
-            "Agenda inicial generada",
+            "Initial research agenda generated",
             subqueries=len(payload.subqueries),
             search_intents=len(payload.search_intents),
         )
@@ -85,7 +85,7 @@ class ResearchNodes:
             next_candidate = state["search_queue"][0]
             event = self._runtime.telemetry.record(
                 "source_manager",
-                "Reutilizando candidato ya priorizado",
+                "Reusing an already prioritized candidate",
                 url=next_candidate.url,
             )
             return {
@@ -112,7 +112,7 @@ class ResearchNodes:
         telemetry = self._start_event(
             state,
             "source_manager",
-            "Buscando y priorizando nuevas fuentes",
+            "Searching for and prioritizing new sources",
             queries=candidate_queries,
         )
         raw_candidates: list[SearchCandidate] = []
@@ -120,7 +120,7 @@ class ResearchNodes:
         for query in candidate_queries:
             self._runtime.telemetry.record(
                 "source_manager",
-                "Consultando backend de busqueda",
+                "Querying search backend",
                 query=query,
                 backend=self._runtime.config.search.backend,
             )
@@ -132,7 +132,7 @@ class ResearchNodes:
             except Exception as exc:  # noqa: BLE001
                 event = self._runtime.telemetry.record(
                     "source_manager",
-                    "Fallo en backend de busqueda",
+                    "Search backend failed",
                     query=query,
                     error=str(exc),
                 )
@@ -184,7 +184,7 @@ class ResearchNodes:
                     next_candidate = bootstrap_ranked[0]
                     event = self._runtime.telemetry.record(
                         "source_manager",
-                        "Activando fuentes bootstrap autoritativas",
+                        "Activating authoritative bootstrap sources",
                         selected=next_candidate.url,
                         candidates=len(bootstrap_ranked),
                     )
@@ -199,7 +199,7 @@ class ResearchNodes:
             fallback_reason = state["fallback_reason"] or "no_actionable_sources"
             event = self._runtime.telemetry.record(
                 "source_manager",
-                "No hay nuevas fuentes accionables",
+                "No new actionable sources are available",
                 queries=candidate_queries,
             )
             return {
@@ -214,7 +214,7 @@ class ResearchNodes:
         next_candidate = ranked[0]
         event = self._runtime.telemetry.record(
             "source_manager",
-            "Fuentes descubiertas y priorizadas",
+            "Sources discovered and prioritized",
             queries=candidate_queries,
             selected=next_candidate.url,
             candidates=len(ranked),
@@ -234,11 +234,11 @@ class ResearchNodes:
             result = BrowserResult(
                 url="",
                 status=BrowserPageStatus.TERMINAL_ERROR,
-                error="No hay candidato accionable disponible",
+                error="No actionable candidate is available",
             )
             event = self._runtime.telemetry.record(
                 "browser",
-                "No se pudo navegar porque no hay candidato actual",
+                "Skipping navigation because there is no current candidate",
             )
             return {
                 "current_browser_result": result,
@@ -248,7 +248,7 @@ class ResearchNodes:
         telemetry = self._start_event(
             state,
             "browser",
-            "Navegando con Lightpanda",
+            "Navigating with Lightpanda",
             url=candidate.url,
         )
         result = self._runtime.browser.fetch(candidate.url)
@@ -281,7 +281,7 @@ class ResearchNodes:
             )
         event = self._runtime.telemetry.record(
             "browser",
-            "Navegacion completada",
+            "Navigation completed",
             url=candidate.url,
             status=result.status.value,
         )
@@ -311,7 +311,7 @@ class ResearchNodes:
         telemetry = self._start_event(
             state,
             "extractor",
-            "Extrayendo evidencia con LLM",
+            "Extracting evidence with the LLM",
             url=browser_result.url,
             chunks=len(selected_chunks),
         )
@@ -341,7 +341,7 @@ class ResearchNodes:
             )
         event = self._runtime.telemetry.record(
             "extractor",
-            "Extraccion completada",
+            "Evidence extraction completed",
             url=browser_result.url,
             evidence=len(latest_evidence),
         )
@@ -356,7 +356,7 @@ class ResearchNodes:
         telemetry = self._start_event(
             state,
             "context_manager",
-            "Integrando evidencia en el dossier",
+            "Integrating evidence into the dossier",
             new_evidence=len(latest),
         )
         accepted = deduplicate_evidence(state["atomic_evidence"], latest)
@@ -373,12 +373,12 @@ class ResearchNodes:
                 DiscardedSource(
                     url=browser_result.url,
                     reason=SourceDiscardReason.NO_EVIDENCE,
-                    note="La fuente se cargo pero no produjo evidencia aceptable",
+                    note="The source loaded successfully but produced no acceptable evidence",
                 )
             )
         event = self._runtime.telemetry.record(
             "context_manager",
-            "Dossier actualizado",
+            "Dossier updated",
             accepted_evidence=len(accepted),
             total_evidence=len(updated_evidence),
         )
@@ -394,7 +394,7 @@ class ResearchNodes:
         telemetry = self._start_event(
             state,
             "evaluator",
-            "Evaluando cobertura y criterio de parada",
+            "Evaluating coverage and stop criteria",
             active_subqueries=len(state["active_subqueries"]),
             evidence=len(state["atomic_evidence"]),
         )
@@ -441,7 +441,7 @@ class ResearchNodes:
 
         event = self._runtime.telemetry.record(
             "evaluator",
-            "Cobertura evaluada",
+            "Coverage evaluated",
             resolved=len(newly_resolved),
             remaining=len(remaining_active),
             contradictions=len(semantic.contradictions),
@@ -463,7 +463,7 @@ class ResearchNodes:
         telemetry = self._start_event(
             state,
             "synthesizer",
-            "Sintetizando informe final",
+            "Synthesizing final report",
             evidence=len(state["atomic_evidence"]),
             resolved=len(state["resolved_subqueries"]),
         )
@@ -476,7 +476,7 @@ class ResearchNodes:
             report.markdown_report = render_markdown_report(report)
         event = self._runtime.telemetry.record(
             "synthesizer",
-            "Informe final generado",
+            "Final report generated",
             evidence=len(state["atomic_evidence"]),
             sources=len(report.cited_sources),
         )
@@ -500,7 +500,7 @@ class ResearchNodes:
 
     def _fallback_report(self, state: ResearchState) -> FinalReport:
         evidence = state["atomic_evidence"]
-        answer = state["working_dossier"].global_summary or "No se pudo reunir evidencia suficiente para responder con soporte verificable. Revisa el fallback_reason y la telemetria para diagnostico."
+        answer = state["working_dossier"].global_summary or "The system could not gather enough evidence to answer with verifiable support. Review fallback_reason and telemetry for diagnostics."
         confidence = ConfidenceLevel.MEDIUM if len(evidence) >= 2 else ConfidenceLevel.LOW
         sections = []
         relevant_subqueries = [*state["resolved_subqueries"], *state["active_subqueries"]]

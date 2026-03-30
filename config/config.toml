@@ -1,0 +1,47 @@
+[model]
+model_name = "qwen3.5:9b"
+base_url = "http://127.0.0.1:11434"
+temperature_planner = 0.2
+temperature_extractor = 0.0
+temperature_evaluator = 0.0
+temperature_synthesizer = 0.1
+num_ctx = 100000
+num_predict = 900
+timeout_seconds = 120
+
+[context]
+target_tokens = 100000
+configured_by = "config_file"
+selection_policy = "hierarchical_relevance_first"
+evidence_budget_ratio = 0.45
+dossier_budget_ratio = 0.30
+local_source_budget_ratio = 0.20
+safety_margin_ratio = 0.05
+
+[browser]
+image = "lightpanda/browser:nightly"
+disable_telemetry = true
+wait_ms = 7000
+wait_until = "networkidle"
+obey_robots = true
+max_content_chars = 24000
+min_useful_chars = 300
+min_partial_chars = 120
+request_timeout_seconds = 90
+
+[search]
+backend = "duckduckgo_lite"
+results_per_query = 5
+max_queries_per_cycle = 3
+user_agent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+
+[runtime]
+max_iterations = 8
+artifacts_dir = "artifacts"
+logs_dir = "logs"
+enable_checkpoints = true
+llm_retry_attempts = 2
+
+[prompts]
+directory = "prompts"
+strict_templates = true

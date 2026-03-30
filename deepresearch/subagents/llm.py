@@ -1,9 +1,9 @@
-"""Workers LLM acotados y auditables.
+"""Bounded and auditable LLM workers.
 
-Cada worker usa prompts cortos, contexto minimo y parseo estructurado con
-PydanticOutputParser. Cuando el modelo devuelve salida imperfecta se intenta una
-reparacion prudente, seguida de un retry controlado y un fallback por extraccion
-de JSON si la salida es casi util.
+Each worker uses short prompts, minimal context, and structured parsing through
+PydanticOutputParser. When the model emits imperfect output, the runtime tries
+prudent repair, followed by controlled retries and JSON salvage when the answer
+is still close to usable.
 """
 
 from __future__ import annotations
@@ -13,13 +13,14 @@ from pathlib import Path
 import re
 from typing import Any, TypeVar
 
+from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.output_parsers import PydanticOutputParser
-from langchain_core.prompts import ChatPromptTemplate
 from langchain_ollama import ChatOllama
 from pydantic import BaseModel, ConfigDict, Field
 
-from ..config import ModelConfig, RuntimeConfig
+from ..config import ResearchConfig
 from ..context_manager import NodeContext
+from ..prompting import PromptMessages, PromptTemplateLoader
 from ..state import ConfidenceLevel, Contradiction, FinalReport, Gap, GapSeverity, SearchIntent, Subquery
 from .deterministic import build_report_sources, render_markdown_report
 
@@ -84,9 +85,14 @@ class FinalReportPayload(BaseModel):
 
 
 class LLMWorkers:
-    def __init__(self, model_config: ModelConfig, runtime_config: RuntimeConfig) -> None:
-        self._model_config = model_config
-        self._runtime_config = runtime_config
+    def __init__(self, config: ResearchConfig) -> None:
+        self._config = config
+        self._model_config = config.model
+        self._runtime_config = config.runtime
+        self._prompt_loader = PromptTemplateLoader(
+            config.prompts_dir,
+            strict_templates=config.prompts.strict_templates,
+        )
 
     def _llm(self, *, temperature: float) -> ChatOllama:
         return ChatOllama(
@@ -104,15 +110,19 @@ class LLMWorkers:
     def _parse_response(
         self,
         *,
-        prompt: ChatPromptTemplate,
+        prompt_name: str,
         variables: dict[str, Any],
         schema: type[TModel],
         temperature: float,
     ) -> TModel:
         parser = PydanticOutputParser(pydantic_object=schema)
-        prompt_value = prompt.invoke({**variables, "format_instructions": self._compact_format_instructions(schema)})
+        prompt_pair = self._render_prompt_pair(
+            prompt_name,
+            {**variables, "format_instructions": self._compact_format_instructions(schema)},
+        )
+        prompt_text = self._stringify_prompt(prompt_pair)
         llm = self._llm(temperature=temperature)
-        raw = llm.invoke(prompt_value).content
+        raw = llm.invoke(self._as_langchain_messages(prompt_pair)).content
         if isinstance(raw, list):
             raw = "\n".join(str(item) for item in raw)
         raw_text = str(raw)
@@ -120,30 +130,19 @@ class LLMWorkers:
         if parsed is not None:
             return parsed
 
-        repair_prompt = ChatPromptTemplate.from_messages(
-            [
-                (
-                    "system",
-                    "Repara una salida estructurada invalida sin cambiar el contenido factual. Devuelve solo JSON valido. {format_instructions}",
-                ),
-                (
-                    "human",
-                    "Instrucciones originales:\n{original_prompt}\n\nSalida invalida:\n{raw_output}\n\nError de parseo: {parse_error}",
-                ),
-            ]
-        )
         last_error = "initial_parse_failed"
         for _ in range(self._runtime_config.llm_retry_attempts):
             try:
-                repair_value = repair_prompt.invoke(
+                repair_pair = self._render_prompt_pair(
+                    "repair",
                     {
                         "format_instructions": self._compact_format_instructions(schema),
-                        "original_prompt": prompt_value.to_string(),
+                        "original_prompt": prompt_text,
                         "raw_output": raw_text,
                         "parse_error": last_error,
                     }
                 )
-                retry_raw = llm.invoke(repair_value).content
+                retry_raw = llm.invoke(self._as_langchain_messages(repair_pair)).content
                 if isinstance(retry_raw, list):
                     retry_raw = "\n".join(str(item) for item in retry_raw)
                 retry_text = str(retry_raw)
@@ -153,8 +152,20 @@ class LLMWorkers:
                 last_error = "repair_parse_failed"
             except Exception as exc:  # noqa: BLE001
                 last_error = str(exc)
-        self._dump_failed_output(schema, prompt_value.to_string(), raw_text, last_error)
-        raise ValueError(f"No se pudo parsear la salida estructurada: {last_error}")
+        self._dump_failed_output(schema, prompt_text, raw_text, last_error)
+        raise ValueError(f"Failed to parse structured output: {last_error}")
+
+    def _render_prompt_pair(self, prompt_name: str, variables: dict[str, Any]) -> PromptMessages:
+        return self._prompt_loader.render(prompt_name, variables)
+
+    def _as_langchain_messages(self, prompt_pair: PromptMessages) -> list[SystemMessage | HumanMessage]:
+        return [
+            SystemMessage(content=prompt_pair.system),
+            HumanMessage(content=prompt_pair.human),
+        ]
+
+    def _stringify_prompt(self, prompt_pair: PromptMessages) -> str:
+        return f"SYSTEM:\n{prompt_pair.system}\n\nHUMAN:\n{prompt_pair.human}"
 
     def _try_parse(
         self,
@@ -186,33 +197,33 @@ class LLMWorkers:
     def _compact_format_instructions(self, schema: type[TModel]) -> str:
         instructions = {
             PlannerPayload: (
-                'Devuelve un JSON objeto con las claves: '
+                'Return a JSON object with the keys: '
                 'subqueries=[{id,question,rationale,priority,evidence_target,success_criteria,search_terms}], '
                 'search_intents=[{query,rationale,subquery_ids}], hypotheses=[string]. '
-                'priority debe ser entero 1-5, evidence_target debe ser entero 1-4, success_criteria debe ser array de strings cortos, '
-                'subquery_ids debe contener ids reales de subqueries. '
-                'Manten todo muy breve: maximo 3 subqueries, 3 search_intents, 2 success_criteria por subquery y 2 search_terms por subquery. '
-                'No anadas texto fuera del JSON.'
+                'priority must be an integer 1-5, evidence_target must be an integer 1-4, success_criteria must be an array of short strings, '
+                'and subquery_ids must reference real subquery ids. '
+                'Keep everything brief: at most 3 subqueries, 3 search_intents, 2 success_criteria per subquery, and 2 search_terms per subquery. '
+                'Do not add text outside the JSON object.'
             ),
             EvidencePayload: (
-                'Devuelve un JSON objeto con la clave evidences=[{summary,claim,quotation,citation_locator,relevance_score,confidence,caveats,tags}]. '
-                'Manten la salida breve: maximo 3 evidences y caveats cortos. '
-                'confidence debe ser low, medium o high. No anadas texto fuera del JSON.'
+                'Return a JSON object with the key evidences=[{summary,claim,quotation,citation_locator,relevance_score,confidence,caveats,tags}]. '
+                'Keep the output brief: at most 3 evidence items and short caveats. '
+                'confidence must be low, medium, or high. Do not add text outside the JSON object.'
             ),
             CoveragePayload: (
-                'Devuelve un JSON objeto con las claves resolved_subquery_ids=[string], contradictions=[{topic,statement_a,statement_b,evidence_ids,severity,note}], '
+                'Return a JSON object with the keys resolved_subquery_ids=[string], contradictions=[{topic,statement_a,statement_b,evidence_ids,severity,note}], '
                 'open_gaps=[{subquery_id,description,severity,rationale,suggested_queries,actionable}], is_sufficient=bool, rationale=string. '
-                'severity debe ser low, medium, high o critical. No anadas texto fuera del JSON.'
+                'severity must be low, medium, high, or critical. Do not add text outside the JSON object.'
             ),
             FinalReportPayload: (
-                'Devuelve un JSON objeto con las claves executive_answer=string, key_findings=[string], confidence=low|medium|high, '
+                'Return a JSON object with the keys executive_answer=string, key_findings=[string], confidence=low|medium|high, '
                 'reservations=[string], open_gaps=[string], '
                 'sections=[{title,summary,body,evidence_ids,subquery_ids}]. '
-                'Usa maximo 4 sections. Cada section debe citar evidence_ids existentes en la evidencia de entrada. '
-                'No anadas texto fuera del JSON.'
+                'Use at most 4 sections. Every section must cite evidence_ids that already exist in the input evidence. '
+                'Do not add text outside the JSON object.'
             ),
         }
-        return instructions.get(schema, 'Devuelve solo un JSON valido sin texto adicional.')
+        return instructions.get(schema, 'Return valid JSON only, with no additional text.')
 
     def _dump_failed_output(self, schema: type[TModel], prompt_text: str, raw_text: str, error: str) -> None:
         target_dir = Path(self._runtime_config.logs_dir)
@@ -245,7 +256,7 @@ class LLMWorkers:
 
     def _normalize_planner_payload(self, payload: Any) -> dict[str, Any]:
         if not isinstance(payload, dict):
-            raise ValueError("Planner payload no es un objeto JSON")
+            raise ValueError("Planner payload is not a JSON object")
 
         subqueries = payload.get("subqueries", [])
         if isinstance(subqueries, dict):
@@ -260,8 +271,8 @@ class LLMWorkers:
             normalized_subqueries.append(
                 {
                     "id": subquery_id,
-                    "question": str(item.get("question") or "Subpregunta sin texto"),
-                    "rationale": str(item.get("rationale") or "Sin razonamiento explicito"),
+                    "question": str(item.get("question") or "Subquery text missing"),
+                    "rationale": str(item.get("rationale") or "No explicit rationale provided"),
                     "priority": _coerce_int(item.get("priority"), default=min(index, 5), minimum=1, maximum=5),
                     "evidence_target": _coerce_int(item.get("evidence_target"), default=2, minimum=1, maximum=4),
                     "success_criteria": _ensure_list(item.get("success_criteria")),
@@ -307,7 +318,7 @@ class LLMWorkers:
 
     def _normalize_evidence_payload(self, payload: Any) -> dict[str, Any]:
         if not isinstance(payload, dict):
-            raise ValueError("Evidence payload no es un objeto JSON")
+            raise ValueError("Evidence payload is not a JSON object")
         evidences = payload.get("evidences", [])
         if isinstance(evidences, dict):
             evidences = [evidences]
@@ -331,7 +342,7 @@ class LLMWorkers:
 
     def _normalize_coverage_payload(self, payload: Any) -> dict[str, Any]:
         if not isinstance(payload, dict):
-            raise ValueError("Coverage payload no es un objeto JSON")
+            raise ValueError("Coverage payload is not a JSON object")
         contradictions = payload.get("contradictions", [])
         if isinstance(contradictions, dict):
             contradictions = [contradictions]
@@ -376,7 +387,7 @@ class LLMWorkers:
 
     def _normalize_final_report_payload(self, payload: Any) -> dict[str, Any]:
         if not isinstance(payload, dict):
-            raise ValueError("Final report payload no es un objeto JSON")
+            raise ValueError("Final report payload is not a JSON object")
         sections = payload.get("sections", [])
         if isinstance(sections, dict):
             sections = [sections]
@@ -386,7 +397,7 @@ class LLMWorkers:
                 continue
             normalized_sections.append(
                 {
-                    "title": str(item.get("title") or "Analisis"),
+                    "title": str(item.get("title") or "Analysis"),
                     "summary": str(item.get("summary") or ""),
                     "body": str(item.get("body") or item.get("summary") or ""),
                     "evidence_ids": [str(value) for value in _ensure_list(item.get("evidence_ids"))],
@@ -403,20 +414,8 @@ class LLMWorkers:
         }
 
     def plan_research(self, context: NodeContext) -> PlannerPayload:
-        prompt = ChatPromptTemplate.from_messages(
-            [
-                (
-                    "system",
-                    "Eres un planificador de investigacion. Produce solo agenda, no conclusiones. {format_instructions}",
-                ),
-                (
-                    "human",
-                    "{permanent}\n\n{strategic}\n\nTarea: {operational}\nLimita el numero de subpreguntas a 3 y el numero de search_intents a 3. Usa ids estables tipo sq_1, sq_2. evidence_target es un entero pequeno, no una descripcion. rationale debe ser muy corta. success_criteria debe tener como maximo 2 frases cortas. search_terms debe tener como maximo 2 consultas cortas. hypotheses debe tener como maximo 2 frases cortas.",
-                ),
-            ]
-        )
         payload = self._parse_response(
-            prompt=prompt,
+            prompt_name="planner",
             variables=context.model_dump(),
             schema=PlannerPayload,
             temperature=self._model_config.temperature_planner,
@@ -427,50 +426,26 @@ class LLMWorkers:
         return payload
 
     def extract_evidence(self, context: NodeContext) -> EvidencePayload:
-        prompt = ChatPromptTemplate.from_messages(
-            [
-                (
-                    "system",
-                    "Extrae evidencia atomica y trazable. No inventes hechos. {format_instructions}",
-                ),
-                (
-                    "human",
-                    "{permanent}\n\n{strategic}\n\nEvidencia previa:\n{evidentiary}\n\nFuente actual:\n{local_source}\n\nTarea: {operational}\nMaximo 3 evidencias. caveats y summary deben ser breves.",
-                ),
-            ]
-        )
         variables = context.model_dump()
         variables["evidentiary"] = "\n".join(
-            f"- {item.claim} | fuente={item.source_title} | cita={item.citation_locator}"
+            f"- {item.claim} | source={item.source_title} | citation={item.citation_locator}"
             for item in context.evidentiary
         )
         return self._parse_response(
-            prompt=prompt,
+            prompt_name="extractor",
             variables=variables,
             schema=EvidencePayload,
             temperature=self._model_config.temperature_extractor,
         )
 
     def evaluate_coverage(self, context: NodeContext) -> CoveragePayload:
-        prompt = ChatPromptTemplate.from_messages(
-            [
-                (
-                    "system",
-                    "Evalua cobertura y huecos con prudencia. No cierres la investigacion sin soporte suficiente. {format_instructions}",
-                ),
-                (
-                    "human",
-                    "{permanent}\n\n{strategic}\n\nEvidencia:\n{evidentiary}\n\nTarea: {operational}",
-                ),
-            ]
-        )
         variables = context.model_dump()
         variables["evidentiary"] = "\n".join(
-            f"- {item.subquery_id}: {item.claim} | confianza={item.confidence.value}"
+            f"- {item.subquery_id}: {item.claim} | confidence={item.confidence.value}"
             for item in context.evidentiary
         )
         payload = self._parse_response(
-            prompt=prompt,
+            prompt_name="evaluator",
             variables=variables,
             schema=CoveragePayload,
             temperature=self._model_config.temperature_evaluator,
@@ -483,26 +458,14 @@ class LLMWorkers:
         return payload
 
     def synthesize_report(self, context: NodeContext, *, query: str) -> FinalReport:
-        prompt = ChatPromptTemplate.from_messages(
-            [
-                (
-                    "system",
-                    "Redacta un informe final profundo y estrictamente respaldado por la evidencia proporcionada. No inventes secciones sin soporte. {format_instructions}",
-                ),
-                (
-                    "human",
-                    "Pregunta: {query}\n\nContexto estrategico:\n{strategic}\n\nEvidencia:\n{evidentiary}\n\nTarea: {operational}\nRedacta un resumen ejecutivo, hallazgos clave y sections tematicas. Cada section debe apoyarse en evidence_ids existentes.",
-                ),
-            ]
-        )
         variables = context.model_dump()
         variables["query"] = query
         variables["evidentiary"] = "\n".join(
-            f"- evidence_id={item.id} | subquery_id={item.subquery_id} | claim={item.claim} | fuente={item.source_title} | cita={item.citation_locator} | confianza={item.confidence.value} | caveats={'; '.join(item.caveats[:2])}"
+            f"- evidence_id={item.id} | subquery_id={item.subquery_id} | claim={item.claim} | source={item.source_title} | citation={item.citation_locator} | confidence={item.confidence.value} | caveats={'; '.join(item.caveats[:2])}"
             for item in context.evidentiary
         )
         payload = self._parse_response(
-            prompt=prompt,
+            prompt_name="synthesizer",
             variables=variables,
             schema=FinalReportPayload,
             temperature=self._model_config.temperature_synthesizer,
@@ -522,7 +485,7 @@ class LLMWorkers:
         if not report.sections and context.evidentiary:
             report.sections = [
                 FinalReportPayload.SectionPayload(
-                    title="Analisis principal",
+                    title="Primary analysis",
                     summary=report.executive_answer,
                     body="\n".join(f"- {item.claim}" for item in context.evidentiary[:4]),
                     evidence_ids=[item.id for item in context.evidentiary[:4]],

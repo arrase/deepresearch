@@ -1,4 +1,4 @@
-"""Ensamblaje del StateGraph de investigacion."""
+"""Research StateGraph assembly."""
 
 from __future__ import annotations
 
@@ -21,7 +21,14 @@ def build_graph(runtime: ResearchRuntime):
 
     graph.add_edge(START, "planner")
     graph.add_edge("planner", "source_manager")
-    graph.add_edge("source_manager", "browser")
+    graph.add_conditional_edges(
+        "source_manager",
+        _route_after_source_manager,
+        {
+            "browser": "browser",
+            "evaluator": "evaluator",
+        },
+    )
     graph.add_conditional_edges(
         "browser",
         _route_after_browser,
@@ -43,6 +50,12 @@ def build_graph(runtime: ResearchRuntime):
     )
     graph.add_edge("synthesizer", END)
     return graph.compile()
+
+
+def _route_after_source_manager(state: ResearchState) -> str:
+    if state.get("current_candidate") is None:
+        return "evaluator"
+    return "browser"
 
 
 def _route_after_browser(state: ResearchState) -> str:

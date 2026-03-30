@@ -1,9 +1,9 @@
-"""Workers internos deterministas.
+"""Deterministic internal workers.
 
-Aqui viven las tareas que no requieren inferencia abierta: canonizacion,
-deduplicacion, scoring heuristico, seleccion de contexto y reglas minimas de
-coverage. Esto mantiene fuera del LLM todo lo que puede resolverse con codigo
-normal, mas fiable y mas auditable.
+This module contains tasks that do not require open-ended inference:
+canonicalization, deduplication, heuristic scoring, context selection, and
+minimum coverage rules. It keeps mechanical work out of the LLM for better
+reliability and auditability.
 """
 
 from __future__ import annotations
@@ -160,10 +160,10 @@ def deduplicate_candidates(
         candidate.url = canonical
         candidate.domain = candidate.domain or extract_domain(canonical)
         if canonical in visited_urls:
-            discarded.append((canonical, SourceDiscardReason.ALREADY_VISITED, "URL ya procesada"))
+            discarded.append((canonical, SourceDiscardReason.ALREADY_VISITED, "URL was already processed"))
             continue
         if canonical in unique:
-            discarded.append((canonical, SourceDiscardReason.DUPLICATE_URL, "URL duplicada en la misma tanda"))
+            discarded.append((canonical, SourceDiscardReason.DUPLICATE_URL, "Duplicate URL in the same batch"))
             continue
         unique[canonical] = candidate
     return list(unique.values()), discarded
@@ -263,7 +263,7 @@ def compute_minimum_coverage(
         gaps.append(
             Gap(
                 subquery_id=subquery.id,
-                description=f"Faltan {missing} evidencias para responder con soporte minimo.",
+                description=f"{missing} more evidence items are required to reach the minimum support threshold.",
                 severity=GapSeverity.HIGH if missing >= 2 else GapSeverity.MEDIUM,
                 rationale=subquery.question,
                 suggested_queries=subquery.search_terms[:3] or [subquery.question],
@@ -308,18 +308,18 @@ def build_report_sources(evidence: Iterable[AtomicEvidence]) -> list[ReportSourc
 
 def render_markdown_report(report: FinalReport) -> str:
     lines = [
-        "# Informe de investigacion",
+        "# Research Report",
         "",
-        "## Pregunta de investigacion",
+        "## Research Question",
         report.query,
         "",
-        "## Resumen ejecutivo",
-        report.executive_answer.strip() or "No se pudo redactar una respuesta ejecutiva con soporte suficiente.",
+        "## Executive Summary",
+        report.executive_answer.strip() or "The system could not draft an executive answer with enough support.",
         "",
     ]
 
     if report.key_findings:
-        lines.append("## Hallazgos clave")
+        lines.append("## Key Findings")
         lines.append("")
         for finding in report.key_findings:
             lines.append(f"- {finding}")
@@ -335,44 +335,44 @@ def render_markdown_report(report: FinalReport) -> str:
             lines.append(section.body.strip())
             lines.append("")
         if section.evidence_ids:
-            lines.append(f"Evidencia asociada: {', '.join(section.evidence_ids)}")
+            lines.append(f"Linked evidence: {', '.join(section.evidence_ids)}")
             lines.append("")
 
-    lines.append("## Confianza y reservas")
+    lines.append("## Confidence and Reservations")
     lines.append("")
-    lines.append(f"Nivel de confianza: {report.confidence.value}")
+    lines.append(f"Confidence level: {report.confidence.value}")
     lines.append("")
     if report.reservations:
         for item in report.reservations:
             lines.append(f"- {item}")
     else:
-        lines.append("- No se registraron reservas adicionales durante la sintesis final.")
+        lines.append("- No additional reservations were recorded during final synthesis.")
     lines.append("")
 
-    lines.append("## Huecos abiertos")
+    lines.append("## Open Gaps")
     lines.append("")
     if report.open_gaps:
         for gap in report.open_gaps:
             lines.append(f"- {gap}")
     else:
-        lines.append("- No quedaron huecos abiertos relevantes segun el criterio de cierre aplicado.")
+        lines.append("- No relevant open gaps remained under the applied stop criterion.")
     lines.append("")
 
-    lines.append("## Fuentes citadas")
+    lines.append("## Cited Sources")
     lines.append("")
     if report.cited_sources:
         for index, source in enumerate(report.cited_sources, start=1):
-            evidence_refs = ", ".join(source.evidence_ids) if source.evidence_ids else "sin evidencia enlazada"
-            lines.append(f"{index}. [{source.title}]({source.url}) - evidencia: {evidence_refs}")
+            evidence_refs = ", ".join(source.evidence_ids) if source.evidence_ids else "no linked evidence"
+            lines.append(f"{index}. [{source.title}]({source.url}) - evidence: {evidence_refs}")
     else:
-        lines.append("1. No se registraron fuentes citadas.")
+        lines.append("1. No cited sources were recorded.")
 
     if report.stop_reason:
         lines.extend([
             "",
-            "## Cierre de investigacion",
+            "## Research Stop Reason",
             "",
-            f"Motivo de cierre: {report.stop_reason}",
+            f"Stop reason: {report.stop_reason}",
         ])
 
     return "\n".join(lines).strip() + "\n"
