@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import shutil
 import tomllib
+import sys
 
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
@@ -20,16 +21,21 @@ DEFAULT_CONFIG_FILENAME = "config.toml"
 
 
 def default_config_root() -> Path:
+    """Returns the source config directory in the project root."""
     return Path(__file__).resolve().parent.parent / "config"
 
 
 def resolve_config_root(override: str | Path | None = None) -> Path:
+    """
+    Resolve the config root directory.
+    Priority:
+    1. Explicit override
+    2. ~/.deepresearch/config
+    """
     if override is not None:
         return Path(override).expanduser().resolve()
-    env_value = os.getenv(DEFAULT_CONFIG_ENV_VAR)
-    if env_value:
-        return Path(env_value).expanduser().resolve()
-    return default_config_root().resolve()
+    
+    return (Path.home() / ".deepresearch" / "config").resolve()
 
 
 def bootstrap_config_root(config_root: Path) -> None:
@@ -159,8 +165,12 @@ class ResearchConfig(BaseModel):
     @classmethod
     def load(cls, *, config_root: str | Path | None = None) -> ResearchConfig:
         resolved_root = resolve_config_root(config_root)
-        bootstrap_config_root(resolved_root)
         config_file_path = resolved_root / DEFAULT_CONFIG_FILENAME
+        
+        if not config_file_path.exists():
+            print(f"Error: No se encuentra la configuración en {resolved_root}", file=sys.stderr)
+            sys.exit(1)
+
         raw_payload = tomllib.loads(config_file_path.read_text(encoding="utf-8"))
         config = cls.model_validate(raw_payload)
         config._config_root = resolved_root
