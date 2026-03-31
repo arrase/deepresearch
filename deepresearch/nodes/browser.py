@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..state import BrowserPageStatus, BrowserResult, DiscardedSource, ResearchState, SourceDiscardReason, SourceVisit
+from ..state import BrowserPageStatus, DiscardedSource, ResearchState, SourceDiscardReason, SourceVisit
 from .base import record_telemetry
 
 
@@ -16,7 +16,7 @@ class BrowserNode:
     def __call__(self, state: ResearchState) -> dict:
         candidate = state.get("current_candidate")
         if candidate is None:
-            result = BrowserResult(
+            result = SourceVisit(
                 url="",
                 status=BrowserPageStatus.TERMINAL_ERROR,
                 error="No actionable candidate is available",
@@ -32,17 +32,14 @@ class BrowserNode:
 
         result = self._runtime.browser.fetch(candidate.url)
         visited = dict(state["visited_urls"])
-        resolved_title = candidate.title or result.title
-        visited[result.url] = SourceVisit(
-            url=result.url,
-            final_url=result.final_url,
-            title=resolved_title,
-            status=result.status,
-            content_excerpt=result.excerpt,
-            error=result.error,
-            candidate_subquery_ids=candidate.subquery_ids,
-            diagnostics=result.diagnostics,
-        )
+        
+        # Preserve original candidate subqueries and ensure title
+        result.candidate_subquery_ids = candidate.subquery_ids
+        if not result.title:
+            result.title = candidate.title or "Unknown Title"
+            
+        visited[result.url] = result
+        
         discarded_sources = [*state["discarded_sources"]]
         if result.status not in {BrowserPageStatus.USEFUL, BrowserPageStatus.PARTIAL}:
             reason_map = {
@@ -58,6 +55,7 @@ class BrowserNode:
                     note=result.error or result.status.value,
                 )
             )
+            
         event = self._runtime.telemetry.record(
             "browser",
             "Navigation completed",

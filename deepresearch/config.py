@@ -7,14 +7,11 @@ of inventing stage-specific defaults at call sites.
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
-import shutil
 import tomllib
-import sys
 from importlib import resources
 
-from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, model_validator
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
 
 DEFAULT_CONFIG_ENV_VAR = "DEEPRESEARCH_CONFIG_ROOT"

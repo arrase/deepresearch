@@ -2,9 +2,10 @@ from deepresearch.config import ResearchConfig
 from deepresearch.context_manager import ContextManager
 from deepresearch.graph import build_graph
 from deepresearch.nodes import ResearchRuntime
+from deepresearch.core.llm import PlannerPayload, EvidencePayload, EvidenceDraft, CoveragePayload
 from deepresearch.state import (
     BrowserPageStatus,
-    BrowserResult,
+    SourceVisit,
     ConfidenceLevel,
     FinalReport,
     SearchCandidate,
@@ -28,8 +29,8 @@ class FakeSearchClient:
 
 
 class FakeBrowser:
-    def fetch(self, url: str) -> BrowserResult:
-        return BrowserResult(
+    def fetch(self, url: str) -> SourceVisit:
+        return SourceVisit(
             url=url,
             final_url=url,
             status=BrowserPageStatus.USEFUL,
@@ -41,7 +42,7 @@ class FakeBrowser:
 
 
 class FailIfCalledBrowser:
-    def fetch(self, url: str) -> BrowserResult:
+    def fetch(self, url: str) -> SourceVisit:
         raise AssertionError(f"Browser should not be called for url={url}")
 
 
@@ -51,7 +52,7 @@ class EmptySearchClient:
 
 
 class FakeLLMWorkers:
-    def plan_research(self, context):
+    def plan_research(self, context) -> PlannerPayload:
         subquery = Subquery(
             id="sq_demo",
             question="What happened to fusion demand in 2026?",
@@ -59,47 +60,35 @@ class FakeLLMWorkers:
             evidence_target=1,
             search_terms=["fusion demand 2026"],
         )
-        return type(
-            "PlannerPayload",
-            (),
-            {
-                "subqueries": [subquery],
-                "search_intents": [SearchIntent(query="fusion demand 2026", rationale="primary", subquery_ids=[subquery.id])],
-                "hypotheses": ["Demand increased"],
-            },
-        )()
+        return PlannerPayload(
+            subqueries=[subquery],
+            search_intents=[SearchIntent(query="fusion demand 2026", rationale="primary", subquery_ids=[subquery.id])],
+            hypotheses=["Demand increased"],
+        )
 
-    def extract_evidence(self, context):
-        draft = type(
-            "EvidenceDraft",
-            (),
-            {
-                "summary": "Demand increased",
-                "claim": "Fusion demand is rising in 2026.",
-                "quotation": "Fusion demand is rising in 2026.",
-                "citation_locator": "paragraph 1",
-                "relevance_score": 0.9,
-                "confidence": ConfidenceLevel.HIGH,
-                "caveats": [],
-                "tags": ["trend"],
-            },
-        )()
-        return type("EvidencePayload", (), {"evidences": [draft]})()
+    def extract_evidence(self, context) -> EvidencePayload:
+        draft = EvidenceDraft(
+            summary="Demand increased",
+            claim="Fusion demand is rising in 2026.",
+            quotation="Fusion demand is rising in 2026.",
+            citation_locator="paragraph 1",
+            relevance_score=0.9,
+            confidence=ConfidenceLevel.HIGH,
+            caveats=[],
+            tags=["trend"],
+        )
+        return EvidencePayload(evidences=[draft])
 
-    def evaluate_coverage(self, context):
-        return type(
-            "CoveragePayload",
-            (),
-            {
-                "resolved_subquery_ids": ["sq_demo"],
-                "contradictions": [],
-                "open_gaps": [],
-                "is_sufficient": True,
-                "rationale": "Enough evidence",
-            },
-        )()
+    def evaluate_coverage(self, context) -> CoveragePayload:
+        return CoveragePayload(
+            resolved_subquery_ids=["sq_demo"],
+            contradictions=[],
+            open_gaps=[],
+            is_sufficient=True,
+            rationale="Enough evidence",
+        )
 
-    def synthesize_report(self, context, *, query: str):
+    def synthesize_report(self, context, query: str):
         return FinalReport(
             query=query,
             executive_answer="Fusion demand increased in 2026 according to the accepted source.",
@@ -109,6 +98,7 @@ class FakeLLMWorkers:
             open_gaps=[],
             cited_sources=[{"url": "https://example.com/report", "title": "Example report", "evidence_ids": ["ev1"]}],
             evidence_ids=["ev1"],
+            markdown_report="# Research Report\n\nFusion demand is rising.",
         )
 
 

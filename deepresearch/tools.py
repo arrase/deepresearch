@@ -2,7 +2,7 @@
 
 Lightpanda is managed through the Docker SDK so the browser image can be
 bootstrapped at startup. The adapter runs a deterministic fetch command,
-classifies technical outcomes, and returns a stable BrowserResult to the graph.
+classifies technical outcomes, and returns a stable SourceVisit to the graph.
 """
 
 from __future__ import annotations
@@ -14,10 +14,9 @@ from urllib.parse import parse_qs, urljoin, urlparse
 import docker
 import httpx
 from bs4 import BeautifulSoup
-from docker.errors import DockerException
 
 from .config import BrowserConfig, SearchConfig
-from .state import BrowserPageStatus, BrowserResult, SearchCandidate
+from .state import BrowserPageStatus, SearchCandidate, SourceVisit
 from .core.utils import (
     canonicalize_url,
     classify_browser_payload,
@@ -169,22 +168,13 @@ def _normalize_search_query(query: str) -> str:
 
 
 class LightpandaDockerManager:
-    """Deterministic wrapper around Lightpanda running in Docker.
-
-    The official container fetch command is used because it returns text already
-    stabilized by the browser. The manager isolates Docker so the rest of the
-    system only sees classified BrowserResult objects.
-    """
+    """Deterministic wrapper around Lightpanda running in Docker."""
 
     def __init__(self, config: BrowserConfig) -> None:
         self._config = config
         self._client = docker.from_env()
 
-    @property
-    def image(self) -> str:
-        return self._config.image
-
-    def fetch(self, url: str) -> BrowserResult:
+    def fetch(self, url: str) -> SourceVisit:
         command = [
             "/bin/lightpanda",
             "fetch",
@@ -219,30 +209,20 @@ class LightpandaDockerManager:
                 min_partial_chars=self._config.min_partial_chars,
                 min_useful_chars=self._config.min_useful_chars,
             )
-            title = self._extract_title(content)
-            return BrowserResult(
+            return SourceVisit(
                 url=url,
                 final_url=url,
                 status=status,
-                title=title,
+                title=self._extract_title(content),
                 content=content,
                 excerpt=short_excerpt(content),
-                exit_code=0,
                 diagnostics={
                     "image": self._config.image,
                     "wait_ms": self._config.wait_ms,
-                    "wait_until": self._config.wait_until,
                 },
             )
-        except DockerException as exc:
-            return BrowserResult(
-                url=url,
-                status=BrowserPageStatus.RECOVERABLE_ERROR,
-                error=str(exc),
-                diagnostics={"image": self._config.image},
-            )
         except Exception as exc:  # noqa: BLE001
-            return BrowserResult(
+            return SourceVisit(
                 url=url,
                 status=BrowserPageStatus.TERMINAL_ERROR,
                 error=str(exc),
@@ -252,14 +232,9 @@ class LightpandaDockerManager:
     def _extract_title(self, content: str) -> str:
         for raw_line in content.splitlines():
             line = raw_line.strip()
-            if not line:
-                continue
-            if line.startswith("[") and "](" in line:
-                continue
-            if line.startswith("-"):
+            if not line or (line.startswith("[") and "](" in line) or line.startswith("-"):
                 continue
             cleaned = line.lstrip("#").strip()
             if cleaned:
                 return cleaned[:200]
-        first_line = next((line.strip("# ").strip() for line in content.splitlines() if line.strip()), "")
-        return first_line[:200]
+        return ""

@@ -13,13 +13,14 @@ class ContextManagerNode:
     def __init__(self, runtime: Any) -> None:
         self._runtime = runtime
 
-    @record_telemetry("context_manager", "Integrating evidence into the dossier for: {query}")
+    @record_telemetry("context_manager", "Integrating evidence for: {query}")
     def __call__(self, state: ResearchState) -> dict:
         browser_result = state.get("current_browser_result")
         latest = state.get("latest_evidence", [])
         
         accepted = deduplicate_evidence(state["atomic_evidence"], latest)
         updated_evidence = [*state["atomic_evidence"], *accepted]
+        
         dossier = update_working_dossier(
             state["working_dossier"],
             evidence=accepted,
@@ -27,26 +28,19 @@ class ContextManagerNode:
             source_title=browser_result.title if browser_result else None,
         )
         
-        discarded_sources = [*state["discarded_sources"]]
+        discarded = list(state["discarded_sources"])
         if browser_result and not latest:
-            discarded_sources.append(
-                DiscardedSource(
-                    url=browser_result.url,
-                    reason=SourceDiscardReason.NO_EVIDENCE,
-                    note="The source loaded successfully but produced no acceptable evidence",
-                )
-            )
+            discarded.append(DiscardedSource(
+                url=browser_result.url,
+                reason=SourceDiscardReason.NO_EVIDENCE,
+                note="No evidence extracted from this source"
+            ))
 
-        event = self._runtime.telemetry.record(
-            "context_manager",
-            "Dossier updated",
-            accepted_evidence=len(accepted),
-            total_evidence=len(updated_evidence),
-        )
+        event = self._runtime.telemetry.record("context_manager", "Dossier updated", count=len(accepted))
         return {
             "atomic_evidence": updated_evidence,
             "working_dossier": dossier,
-            "discarded_sources": discarded_sources,
+            "discarded_sources": discarded,
             "latest_evidence": accepted,
             "telemetry": [*state["telemetry"], event],
         }

@@ -1,1 +1,10 @@
-Return a JSON object with the key evidences=[{summary,claim,quotation,citation_locator,relevance_score,confidence,caveats,tags}]. You can extract up to 8 evidence items. Keep caveats and summaries detailed but concise. confidence must be low, medium, or high. Do not add text outside the JSON object.
+Return a JSON object:
+{
+  "evidences": [
+    {
+      "summary": "...", "claim": "...", "quotation": "...", "citation_locator": "...",
+      "relevance_score": 0.8, "confidence": "medium", "caveats": ["..."], "tags": ["..."]
+    }
+  ]
+}
+JSON ONLY. Maximum 8 items. No talk.

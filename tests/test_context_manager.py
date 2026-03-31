@@ -23,6 +23,6 @@ def test_extractor_context_selects_relevant_evidence() -> None:
             citation_locator="p2",
         )
     ]
-    context = manager.extractor_context(state, target_subquery_ids=[subquery.id], local_source="Content")
+    context = manager.extractor_context(state, targets=[subquery.id], local_source="Content")
     assert context.evidentiary
     assert context.local_source == "Content"

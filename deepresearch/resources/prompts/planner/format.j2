@@ -1,1 +1,11 @@
-Return a JSON object with the keys: subqueries=[{id,question,rationale,priority,evidence_target,success_criteria,search_terms}], search_intents=[{query,rationale,subquery_ids}], hypotheses=[string]. priority must be an integer 1-5, evidence_target must be an integer 1-4, success_criteria must be an array of short strings, and subquery_ids must reference real subquery ids. Do not add text outside the JSON object.
+Return a JSON object:
+{
+  "subqueries": [
+    {"id": "sq_1", "question": "...", "rationale": "...", "priority": 1, "evidence_target": 3, "success_criteria": ["..."], "search_terms": ["..."]}
+  ],
+  "search_intents": [
+    {"query": "...", "rationale": "...", "subquery_ids": ["sq_1"]}
+  ],
+  "hypotheses": ["..."]
+}
+JSON ONLY. No talk. Do not include extra keys.
