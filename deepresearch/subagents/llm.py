@@ -239,7 +239,7 @@ class LLMWorkers:
                     "question": str(item.get("question") or "Subquery text missing"),
                     "rationale": str(item.get("rationale") or "No explicit rationale provided"),
                     "priority": _coerce_int(item.get("priority"), default=min(index, 5), minimum=1, maximum=5),
-                    "evidence_target": _coerce_int(item.get("evidence_target"), default=2, minimum=1, maximum=4),
+                    "evidence_target": _coerce_int(item.get("evidence_target"), default=3, minimum=1, maximum=10),
                     "success_criteria": _ensure_list(item.get("success_criteria")),
                     "search_terms": _ensure_list(item.get("search_terms")) or [str(item.get("question") or "")],
                 }

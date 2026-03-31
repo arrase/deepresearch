@@ -49,12 +49,40 @@ class ContextManager:
         return int(self._config.context.target_tokens * ratio)
 
     def planner_context(self, state: ResearchState) -> NodeContext:
+        if not state["active_subqueries"] and not state["resolved_subqueries"]:
+            strategic = "No subqueries exist yet. You must produce the initial agenda."
+            operational = "Decompose the question into concrete subqueries, working hypotheses, and initial search queries."
+        else:
+            active = self._render_subqueries(state["active_subqueries"])
+            resolved = self._render_subqueries(state["resolved_subqueries"])
+            gaps = self._render_gaps(state["open_gaps"])
+            
+            # Build a summary of what we know so far
+            dossier_blocks = []
+            if state["working_dossier"].global_summary:
+                dossier_blocks.append(f"Global Summary: {state['working_dossier'].global_summary}")
+            
+            for sq_id, summary in state["working_dossier"].subquery_summaries.items():
+                dossier_blocks.append(f"Subquery {sq_id} findings: {summary}")
+            
+            dossier_context = "\n".join(dossier_blocks)
+            
+            strategic = (
+                f"Current Progress:\n{dossier_context}\n\n"
+                f"Active subqueries:\n{active}\n\n"
+                f"Resolved subqueries:\n{resolved}\n\n"
+                f"Open gaps:\n{gaps}"
+            ).strip()
+            operational = (
+                "Review the current progress and open gaps. "
+                "You may add new subqueries to the agenda or refine existing ones to improve depth and coverage. "
+                "Ensure new subqueries do not overlap with resolved ones unless a deep-dive is necessary."
+            )
+
         return NodeContext(
             permanent=f"Primary question: {state['query']}",
-            strategic="No subqueries exist yet. You must produce the initial agenda.",
-            operational=(
-                "Decompose the question into concrete subqueries, working hypotheses, and initial search queries."
-            ),
+            strategic=strategic,
+            operational=operational,
         )
 
     def extractor_context(
@@ -86,13 +114,22 @@ class ContextManager:
             subquery_ids=[item.id for item in state["active_subqueries"]],
             budget_tokens=self._budget(self._config.context.evidence_budget_ratio),
         )
+        
+        # Enrichment from WorkingDossier
+        dossier_summary = ""
+        if state["working_dossier"].global_summary:
+            dossier_summary = f"Global Progress Summary: {state['working_dossier'].global_summary}\n\n"
+        
         strategic = (
+            f"{dossier_summary}"
             f"Active subqueries:\n{self._render_subqueries(state['active_subqueries'])}\n"
             f"Resolved subqueries:\n{self._render_subqueries(state['resolved_subqueries'])}\n"
             f"Open gaps:\n{self._render_gaps(state['open_gaps'])}"
         ).strip()
         operational = (
-            "Evaluate coverage, contradictions, and sufficiency. Do not stop the research if the evidence does not support the answer."
+            "Evaluate coverage, contradictions, and sufficiency. "
+            "Use the progress summary to identify missing nuances or unaddressed facets. "
+            "Generate detailed open gaps if certain subqueries require deeper investigation."
         )
         return NodeContext(
             permanent=f"Primary question: {state['query']}",

@@ -57,8 +57,6 @@ class ResearchNodes:
         return [*state["telemetry"], event]
 
     def node_planner(self, state: ResearchState) -> dict:
-        if state["active_subqueries"]:
-            return {}
         telemetry = self._start_event(
             state,
             "planner",
@@ -67,16 +65,31 @@ class ResearchNodes:
         )
         context = self._runtime.context_manager.planner_context(state)
         payload = self._runtime.llm_workers.plan_research(context)
+        
+        # Deduplicate and merge subqueries
+        existing_ids = {sq.id for sq in [*state["active_subqueries"], *state["resolved_subqueries"]]}
+        merged_subqueries = list(state["active_subqueries"])
+        added_count = 0
+        for nsq in payload.subqueries:
+            if nsq.id not in existing_ids:
+                merged_subqueries.append(nsq)
+                added_count += 1
+        
+        # Merge search intents and hypotheses
+        merged_intents = [*state["search_intents"], *payload.search_intents]
+        merged_hypotheses = list(set([*state["hypotheses"], *payload.hypotheses]))
+
         event = self._runtime.telemetry.record(
             "planner",
-            "Initial research agenda generated",
-            subqueries=len(payload.subqueries),
-            search_intents=len(payload.search_intents),
+            "Research agenda updated",
+            added_subqueries=added_count,
+            total_active=len(merged_subqueries),
+            search_intents=len(merged_intents),
         )
         return {
-            "active_subqueries": payload.subqueries,
-            "search_intents": payload.search_intents,
-            "hypotheses": payload.hypotheses,
+            "active_subqueries": merged_subqueries,
+            "search_intents": merged_intents,
+            "hypotheses": merged_hypotheses,
             "telemetry": [*telemetry, event],
         }
 
@@ -96,16 +109,21 @@ class ResearchNodes:
             }
 
         candidate_queries: list[str] = []
-        for gap in state["open_gaps"]:
+        # Prioritize open gaps (newest first)
+        for gap in reversed(state["open_gaps"]):
             for query in gap.suggested_queries:
-                if query not in state["completed_search_queries"]:
+                if query not in state["completed_search_queries"] and query not in candidate_queries:
                     candidate_queries.append(query)
-        for intent in state["search_intents"]:
-            if intent.query not in state["completed_search_queries"]:
+        
+        # Then newer search intents from iterative planning (deep-dives)
+        for intent in reversed(state["search_intents"]):
+            if intent.query not in state["completed_search_queries"] and intent.query not in candidate_queries:
                 candidate_queries.append(intent.query)
+        
+        # Fallback to active subqueries
         if not candidate_queries:
-            for subquery in state["active_subqueries"]:
-                if subquery.question not in state["completed_search_queries"]:
+            for subquery in reversed(state["active_subqueries"]):
+                if subquery.question not in state["completed_search_queries"] and subquery.question not in candidate_queries:
                     candidate_queries.append(subquery.question)
 
         candidate_queries = candidate_queries[: self._runtime.config.search.max_queries_per_cycle]
@@ -423,6 +441,31 @@ class ResearchNodes:
             gap_index[(gap.subquery_id, gap.description)] = gap
         open_gaps = list(gap_index.values())
 
+        # Phase 3: Dynamic evidence target adjustment
+        contradiction_subquery_ids = set()
+        for contradiction in semantic.contradictions:
+            for ev_id in contradiction.evidence_ids:
+                for ev in state["atomic_evidence"]:
+                    if ev.id == ev_id:
+                        contradiction_subquery_ids.add(ev.subquery_id)
+                        break
+        
+        gap_subquery_ids = {gap.subquery_id for gap in open_gaps if gap.severity in {GapSeverity.HIGH, GapSeverity.CRITICAL}}
+        
+        adjusted_active = []
+        for subquery in remaining_active:
+            new_target = subquery.evidence_target
+            if subquery.id in contradiction_subquery_ids or subquery.id in gap_subquery_ids:
+                new_target = min(subquery.evidence_target + 2, 10)
+                self._runtime.telemetry.record(
+                    "evaluator",
+                    "Increasing evidence target due to uncertainty or contradiction",
+                    subquery_id=subquery.id,
+                    new_target=new_target,
+                )
+            adjusted_active.append(subquery.model_copy(update={"evidence_target": new_target}))
+        remaining_active = adjusted_active
+
         fallback_reason = state["fallback_reason"]
         if state["iteration"] >= state["max_iterations"] and fallback_reason is None:
             fallback_reason = "max_iterations_reached"
@@ -432,11 +475,11 @@ class ResearchNodes:
         minimum_report_evidence = 1 if resolved_total <= 1 else max(2, resolved_total)
         
         # Stop criteria logic:
-        # 1. All subqueries resolved and minimum evidence target met.
-        if not remaining_active and len(state["atomic_evidence"]) >= minimum_report_evidence:
+        # 1. LLM evaluator explicitly signals sufficiency and no active subqueries remain.
+        if semantic.is_sufficient and not remaining_active and len(state["atomic_evidence"]) >= minimum_report_evidence:
             is_sufficient = True
-        # 2. LLM evaluator explicitly signals sufficiency.
-        elif semantic.is_sufficient and not remaining_active and len(state["atomic_evidence"]) >= minimum_report_evidence:
+        # 2. We have no active subqueries and no open gaps (deterministic sufficiency).
+        elif not remaining_active and not open_gaps and len(state["atomic_evidence"]) >= minimum_report_evidence:
             is_sufficient = True
         # 3. We hit a fallback (search failure, no more sources) and have at least SOME evidence.
         elif fallback_reason is not None and len(state["atomic_evidence"]) >= 1:

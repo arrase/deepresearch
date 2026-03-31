@@ -46,6 +46,7 @@ def build_graph(runtime: ResearchRuntime):
         {
             "synthesizer": "synthesizer",
             "source_manager": "source_manager",
+            "planner": "planner",
         },
     )
     graph.add_edge("synthesizer", END)
@@ -74,4 +75,8 @@ def _route_after_browser(state: ResearchState) -> str:
 def _route_after_evaluator(state: ResearchState) -> str:
     if state["is_sufficient"]:
         return "synthesizer"
+    
+    if not state["active_subqueries"]:
+        return "planner"
+        
     return "source_manager"

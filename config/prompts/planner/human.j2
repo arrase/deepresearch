@@ -4,10 +4,16 @@
 
 Task: {{ operational }}
 Write every generated field in the SAME language as the primary question, including subquery text, rationale, search terms, search intents, and hypotheses.
-Limit the output to at most 5 subqueries and 5 search intents.
-Use stable ids such as sq_1 and sq_2.
-evidence_target must be a small integer, not prose.
-rationale must be concise but clear.
-success_criteria must contain at most 3 short phrases per subquery.
-search_terms must contain at most 3 short search queries per subquery.
-hypotheses must contain at most 3 short sentences.
+
+Ambiguity Mapping:
+If the primary question is vague or has multiple interpretations, generate subqueries that map these different facets (e.g., economic, technical, social impact) to ensure a comprehensive research agenda.
+
+Limits:
+- At most 12 subqueries and 10 search intents.
+- evidence_target per subquery should be between 3 and 8, depending on complexity.
+- Use stable ids such as sq_1 and sq_2.
+- evidence_target must be a small integer, not prose.
+- rationale must be concise but clear.
+- success_criteria must contain at most 5 short phrases per subquery.
+- search_terms must contain at most 5 short search queries per subquery.
+- hypotheses must contain at most 5 short sentences.
