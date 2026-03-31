@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 from deepresearch.config import DiscordConfig
-from deepresearch.subagents.discord import send_discord_report
+from deepresearch.outputs.discord import send_discord_report
 from deepresearch.state import FinalReport, ConfidenceLevel
 
 def create_mock_report(query: str, markdown: str) -> FinalReport:

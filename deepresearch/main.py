@@ -11,9 +11,9 @@ from .output_utils import generate_pdf
 from .config import ResearchConfig
 from .context_manager import ContextManager
 from .graph import build_graph
-from .nodes import ResearchRuntime
+from .runtime import ResearchRuntime
 from .state import build_initial_state
-from .subagents.llm import LLMWorkers
+from .core.llm import LLMWorkers
 from .telemetry import TelemetryRecorder
 from .tools import DuckDuckGoSearchClient, LightpandaDockerManager, TavilySearchClient
 
@@ -118,7 +118,7 @@ def cli() -> int:
 
     if args.discord:
         import asyncio
-        from .subagents.discord import send_discord_report
+        from .outputs.discord import send_discord_report
         
         print("Sending report to Discord...", file=sys.stderr, flush=True)
         success = asyncio.run(send_discord_report(config.discord, final_report))

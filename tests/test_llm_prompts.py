@@ -1,5 +1,5 @@
 from deepresearch.config import ResearchConfig
-from deepresearch.subagents.llm import LLMWorkers
+from deepresearch.core.llm import LLMWorkers
 
 def test_load_format_instructions_loads_from_disk() -> None:
     config = ResearchConfig.load()

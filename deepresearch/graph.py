@@ -4,20 +4,21 @@ from __future__ import annotations
 
 from langgraph.graph import END, START, StateGraph
 
-from .nodes import ResearchNodes, ResearchRuntime
+from .runtime import ResearchRuntime
+from .nodes import ResearchNodes
 from .state import BrowserPageStatus, ResearchState
 
 
 def build_graph(runtime: ResearchRuntime):
     nodes = ResearchNodes(runtime)
     graph = StateGraph(ResearchState)
-    graph.add_node("planner", nodes.node_planner)
-    graph.add_node("source_manager", nodes.node_source_manager)
-    graph.add_node("browser", nodes.node_browser)
-    graph.add_node("extractor", nodes.node_extractor)
-    graph.add_node("context_manager", nodes.node_context_manager)
-    graph.add_node("evaluator", nodes.node_evaluator)
-    graph.add_node("synthesizer", nodes.node_synthesizer)
+    graph.add_node("planner", nodes.planner)
+    graph.add_node("source_manager", nodes.source_manager)
+    graph.add_node("browser", nodes.browser)
+    graph.add_node("extractor", nodes.extractor)
+    graph.add_node("context_manager", nodes.context_manager)
+    graph.add_node("evaluator", nodes.evaluator)
+    graph.add_node("synthesizer", nodes.synthesizer)
 
     graph.add_edge(START, "planner")
     graph.add_edge("planner", "source_manager")

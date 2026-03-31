@@ -18,7 +18,7 @@ from docker.errors import DockerException
 
 from .config import BrowserConfig, SearchConfig
 from .state import BrowserPageStatus, BrowserResult, SearchCandidate
-from .subagents.deterministic import (
+from .core.utils import (
     canonicalize_url,
     classify_browser_payload,
     extract_domain,

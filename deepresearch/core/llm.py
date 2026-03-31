@@ -22,7 +22,7 @@ from ..config import ResearchConfig
 from ..context_manager import NodeContext
 from ..prompting import PromptMessages, PromptTemplateLoader
 from ..state import ConfidenceLevel, Contradiction, FinalReport, Gap, GapSeverity, SearchIntent, Subquery
-from .deterministic import build_report_sources, render_markdown_report
+from .utils import build_report_sources, render_markdown_report
 
 TModel = TypeVar("TModel", bound=BaseModel)
 
@@ -219,18 +219,20 @@ class LLMWorkers:
             return _salvage_evidence_payload(cleaned)
         return None
 
+    def _ensure_dict_list(self, payload: Any, key: str) -> list[dict[str, Any]]:
+        items = payload.get(key, [])
+        if isinstance(items, dict):
+            return [items]
+        return [item for item in items if isinstance(item, dict)]
+
     def _normalize_planner_payload(self, payload: Any) -> dict[str, Any]:
         if not isinstance(payload, dict):
             raise ValueError("Planner payload is not a JSON object")
 
-        subqueries = payload.get("subqueries", [])
-        if isinstance(subqueries, dict):
-            subqueries = [subqueries]
+        subqueries = self._ensure_dict_list(payload, "subqueries")
         normalized_subqueries: list[dict[str, Any]] = []
         generated_ids: list[str] = []
         for index, item in enumerate(subqueries, start=1):
-            if not isinstance(item, dict):
-                continue
             subquery_id = str(item.get("id") or f"sq_plan_{index}")
             generated_ids.append(subquery_id)
             normalized_subqueries.append(
@@ -245,13 +247,9 @@ class LLMWorkers:
                 }
             )
 
-        search_intents = payload.get("search_intents", [])
-        if isinstance(search_intents, dict):
-            search_intents = [search_intents]
+        search_intents = self._ensure_dict_list(payload, "search_intents")
         normalized_intents: list[dict[str, Any]] = []
         for item in search_intents:
-            if not isinstance(item, dict):
-                continue
             mapped_ids: list[str] = []
             for raw_id in _ensure_list(item.get("subquery_ids")):
                 if isinstance(raw_id, int):
@@ -284,13 +282,9 @@ class LLMWorkers:
     def _normalize_evidence_payload(self, payload: Any) -> dict[str, Any]:
         if not isinstance(payload, dict):
             raise ValueError("Evidence payload is not a JSON object")
-        evidences = payload.get("evidences", [])
-        if isinstance(evidences, dict):
-            evidences = [evidences]
+        evidences = self._ensure_dict_list(payload, "evidences")
         normalized = []
         for item in evidences:
-            if not isinstance(item, dict):
-                continue
             normalized.append(
                 {
                     "summary": str(item.get("summary") or item.get("claim") or ""),
@@ -308,16 +302,10 @@ class LLMWorkers:
     def _normalize_coverage_payload(self, payload: Any) -> dict[str, Any]:
         if not isinstance(payload, dict):
             raise ValueError("Coverage payload is not a JSON object")
-        contradictions = payload.get("contradictions", [])
-        if isinstance(contradictions, dict):
-            contradictions = [contradictions]
-        open_gaps = payload.get("open_gaps", [])
-        if isinstance(open_gaps, dict):
-            open_gaps = [open_gaps]
+        contradictions = self._ensure_dict_list(payload, "contradictions")
+        open_gaps = self._ensure_dict_list(payload, "open_gaps")
         normalized_contradictions = []
         for item in contradictions:
-            if not isinstance(item, dict):
-                continue
             normalized_contradictions.append(
                 {
                     "topic": str(item.get("topic") or "unknown"),
@@ -330,8 +318,6 @@ class LLMWorkers:
             )
         normalized_gaps = []
         for item in open_gaps:
-            if not isinstance(item, dict):
-                continue
             normalized_gaps.append(
                 {
                     "subquery_id": str(item.get("subquery_id") or "unknown"),
@@ -353,13 +339,9 @@ class LLMWorkers:
     def _normalize_final_report_payload(self, payload: Any) -> dict[str, Any]:
         if not isinstance(payload, dict):
             raise ValueError("Final report payload is not a JSON object")
-        sections = payload.get("sections", [])
-        if isinstance(sections, dict):
-            sections = [sections]
+        sections = self._ensure_dict_list(payload, "sections")
         normalized_sections = []
         for item in sections:
-            if not isinstance(item, dict):
-                continue
             normalized_sections.append(
                 {
                     "title": str(item.get("title") or "Analysis"),

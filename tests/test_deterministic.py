@@ -1,5 +1,5 @@
 from deepresearch.state import AtomicEvidence, Subquery
-from deepresearch.subagents.deterministic import canonicalize_url, compute_minimum_coverage
+from deepresearch.core.utils import canonicalize_url, compute_minimum_coverage
 
 
 def test_canonicalize_url_removes_tracking_query_and_fragment() -> None:
