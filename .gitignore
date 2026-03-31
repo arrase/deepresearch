@@ -5,3 +5,4 @@
 artifacts/
 logs/
 **/**.egg-info
+**/build
