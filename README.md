@@ -81,6 +81,24 @@ The project uses a TOML-based configuration system. On the first run, it will bo
     - `output`: Set to `"pdf"` (default) or `"markdown"` to choose the attachment format.
 - **`prompts/`**: Edit the Jinja2 templates to change how the LLM plans, extracts evidence, or synthesizes the final report.
 
+## AI Agent Integration (Skills)
+
+This project includes a **Skill** definition (located in `skill/deepresearch/SKILL.md`) designed for [OpenClaw](https://github.com/openclaw/openclaw) and any other AI agent that implements a skill-based architecture. 
+
+This allows agents to autonomously invoke Deep Research to fulfill complex information-gathering requests, performing extensive web searches and generating detailed reports.
+
+### Using Skills with Agents
+
+When an agent (like OpenClaw) identifies a task requiring in-depth analysis or factual verification:
+1.  The agent formulates a precise research query based on the user's intent.
+2.  It executes the research in the background using the `--discord` flag.
+3.  The final synthesized report is delivered directly to your configured Discord channel.
+
+**Example Command (Agent-triggered):**
+```bash
+deepresearch "Comprehensive analysis of current state of solid-state battery technology" --discord
+```
+
 ## Development
 
 ### Project Structure
