@@ -20,7 +20,8 @@ from ..state import (
     FinalReport, 
     Gap, 
     SearchIntent, 
-    Subquery
+    Subquery,
+    coerce_bool
 )
 from .utils import build_report_sources
 
@@ -37,7 +38,6 @@ class PlannerPayload(BaseModel):
     def validate_subqueries(cls, v: Any) -> Any:
         if not isinstance(v, list):
             return []
-        # Ensure search_terms is populated if missing
         cleaned = []
         for sq in v:
             if isinstance(sq, Subquery):
@@ -46,17 +46,10 @@ class PlannerPayload(BaseModel):
             if not isinstance(sq, dict):
                 continue
             
-            # Use a copy to avoid mutating input if it's a dict
             sq_data = dict(sq)
+            # Ensure search_terms is populated
             if not sq_data.get("search_terms"):
                 sq_data["search_terms"] = [sq_data.get("question", "")]
-            # Small models often output priority/evidence_target as strings
-            if isinstance(sq_data.get("priority"), str):
-                try: sq_data["priority"] = int(re.search(r"\d+", sq_data["priority"]).group())
-                except: sq_data["priority"] = 1
-            if isinstance(sq_data.get("evidence_target"), str):
-                try: sq_data["evidence_target"] = int(re.search(r"\d+", sq_data["evidence_target"]).group())
-                except: sq_data["evidence_target"] = 3
             cleaned.append(sq_data)
         return cleaned
 
@@ -93,26 +86,8 @@ class CoveragePayload(BaseModel):
 
     @field_validator("is_sufficient", mode="before")
     @classmethod
-    def coerce_bool(cls, v: Any) -> bool:
-        if isinstance(v, str):
-            return v.lower() in {"true", "yes", "1", "si", "sí"}
-        return bool(v)
-
-
-class FinalReportPayload(BaseModel):
-    class SectionPayload(BaseModel):
-        title: str
-        summary: str
-        body: str
-        evidence_ids: list[str] = Field(default_factory=list)
-        subquery_ids: list[str] = Field(default_factory=list)
-
-    executive_answer: str
-    key_findings: list[str] = Field(default_factory=list)
-    sections: list[SectionPayload] = Field(default_factory=list)
-    confidence: ConfidenceLevel = ConfidenceLevel.MEDIUM
-    reservations: list[str] = Field(default_factory=list)
-    open_gaps: list[str] = Field(default_factory=list)
+    def validate_bool(cls, v: Any) -> bool:
+        return coerce_bool(v)
 
 
 class LLMWorkers:
@@ -129,7 +104,6 @@ class LLMWorkers:
             "num_predict": self._config.model.num_predict,
             "timeout": self._config.model.timeout_seconds,
             "disable_streaming": True,
-            "reasoning": False,
         }
         if json_format:
             kwargs["format"] = "json"
@@ -151,22 +125,21 @@ class LLMWorkers:
         llm = self._llm(temperature=temperature)
         messages = [SystemMessage(content=prompt_pair.system), HumanMessage(content=prompt_pair.human)]
         
+        raw_text = ""
         try:
-            raw_text = llm.invoke(messages).content
-            if isinstance(raw_text, list): raw_text = "\n".join(map(str, raw_text))
-            
-            parsed = self._try_parse(parser, str(raw_text), schema)
+            raw_text = str(llm.invoke(messages).content)
+            parsed = self._try_parse(parser, raw_text, schema)
             if parsed: return parsed
         except Exception as e:
-            raw_text = f"Error during LLM invocation: {str(e)}"
+            raw_text = f"Error: {str(e)}"
 
-        # Simple retry with repair
+        # Repair attempt
         try:
             repair_prompt = self._prompt_loader.render("repair", {
                 "format_instructions": instructions,
                 "original_prompt": f"SYSTEM: {prompt_pair.system}\nHUMAN: {prompt_pair.human}",
                 "raw_output": str(raw_text),
-                "parse_error": "JSON Parse/Validation Error"
+                "parse_error": "Invalid JSON or schema mismatch"
             })
             retry_raw = llm.invoke([SystemMessage(content=repair_prompt.system), HumanMessage(content=repair_prompt.human)]).content
             parsed = self._try_parse(parser, str(retry_raw), schema)
@@ -174,44 +147,44 @@ class LLMWorkers:
         except Exception:
             pass
             
-        raise ValueError(f"Failed to parse {prompt_name} response after repair attempt")
+        raise ValueError(f"Failed to parse {prompt_name} response after repair attempt. Raw: {raw_text[:200]}...")
 
     def _try_parse(self, parser: PydanticOutputParser, text: str, schema: type[TModel]) -> TModel | None:
         try:
             return parser.parse(text)
         except Exception:
-            # Basic salvage: extract JSON block
+            # Salvage JSON block
             match = re.search(r"(\{.*\}|\[.*\])", text, flags=re.DOTALL)
             if not match:
                 return None
             
             clean_text = match.group(1)
             
-            # Attempt 1: Direct load
+            # Attempt 1: Direct load and validate
             try:
-                return schema.model_validate(json.loads(clean_text))
+                data = json.loads(clean_text)
+                return schema.model_validate(data)
             except Exception: pass
             
-            # Attempt 2: Clean common syntax errors (trailing commas, etc)
+            # Attempt 2: Clean trailing commas
             try:
-                # Remove trailing commas before closing braces/brackets
                 fixed = re.sub(r",\s*([\]\}])", r"\1", clean_text)
-                return schema.model_validate(json.loads(fixed))
+                data = json.loads(fixed)
+                return schema.model_validate(data)
             except Exception: pass
             
-            # Attempt 3: If it starts with [, wrap it in a dict if the schema expects one
-            # (though Pydantic models usually expect a dict at root)
-            if clean_text.startswith("[") and not issubclass(schema, list):
-                # This is a bit speculative, but some models return a list of objects 
-                # instead of a wrapped object.
+            # Attempt 3: Wrap list in dict if schema expects a wrapped list
+            if clean_text.startswith("["):
                 try:
                     data = json.loads(clean_text)
                     if isinstance(data, list):
-                        # Try to guess the field name or just try to validate it
-                        # For PlannerPayload, it expects 'subqueries', 'search_intents', etc.
-                        # This part is complex to generalize, so we'll keep it simple.
-                        pass
-                except Exception: pass
+                        # Heuristic: Find first list field in schema
+                        for name, field in schema.model_fields.items():
+                            if "list" in str(field.annotation).lower():
+                                try:
+                                    return schema.model_validate({name: data})
+                                except: continue
+                except: pass
 
             return None
 
@@ -238,10 +211,18 @@ class LLMWorkers:
         
         prompt = self._prompt_loader.render("synthesizer", {**vars, "language": self._config.runtime.language, "format_instructions": ""})
         llm = self._llm(temperature=self._config.model.temperature_synthesizer, json_format=False)
-        raw_text = str(llm.invoke([SystemMessage(content=prompt.system), HumanMessage(content=prompt.human)]).content)
         
+        try:
+            raw_text = str(llm.invoke([SystemMessage(content=prompt.system), HumanMessage(content=prompt.human)]).content)
+        except Exception as e:
+            raw_text = f"# Research Report\n\nError generating report: {str(e)}"
+            
         cited_sources = build_report_sources(context.evidentiary)
-        md = raw_text.strip().strip("`").replace("markdown", "", 1).strip()
+        # Clean markdown wrappers
+        md = raw_text.strip()
+        if md.startswith("```"):
+            md = re.sub(r"^```(?:markdown)?\n", "", md)
+            md = re.sub(r"\n```$", "", md)
         
         if cited_sources:
             md += "\n\n## Referenced Sources\n\n"

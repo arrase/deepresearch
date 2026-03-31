@@ -58,6 +58,20 @@ class SearchIntent(BaseModel):
     subquery_ids: list[str] = Field(default_factory=list)
 
 
+import re
+
+def coerce_bool(v: Any) -> bool:
+    if isinstance(v, str):
+        return v.lower() in {"true", "yes", "1", "si", "sí", "true.", "yes."}
+    return bool(v)
+
+def coerce_int(v: Any, default: int = 1) -> int:
+    if isinstance(v, int): return v
+    try:
+        match = re.search(r"\d+", str(v))
+        return int(match.group()) if match else default
+    except: return default
+
 class Subquery(BaseModel):
     id: str = Field(default_factory=lambda: f"sq_{uuid4().hex[:10]}")
     question: str
@@ -71,18 +85,14 @@ class Subquery(BaseModel):
     @field_validator("priority", mode="before")
     @classmethod
     def clamp_priority(cls, v: Any) -> int:
-        try:
-            val = int(str(v).strip())
-            return max(1, min(5, val))
-        except: return 1
+        val = coerce_int(v, 1)
+        return max(1, min(5, val))
 
     @field_validator("evidence_target", mode="before")
     @classmethod
     def clamp_evidence(cls, v: Any) -> int:
-        try:
-            val = int(str(v).strip())
-            return max(1, min(10, val))
-        except: return 2
+        val = coerce_int(v, 2)
+        return max(1, min(10, val))
 
 
 class SearchCandidate(BaseModel):
