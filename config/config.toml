@@ -11,8 +11,6 @@ timeout_seconds = 120
 
 [context]
 target_tokens = 100000
-configured_by = "config_file"
-selection_policy = "hierarchical_relevance_first"
 evidence_budget_ratio = 0.45
 dossier_budget_ratio = 0.30
 local_source_budget_ratio = 0.20
@@ -39,7 +37,3 @@ user_agent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Ge
 [runtime]
 max_iterations = 10
 llm_retry_attempts = 2
-
-[prompts]
-directory = "prompts"
-strict_templates = true

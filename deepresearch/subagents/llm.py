@@ -91,7 +91,7 @@ class LLMWorkers:
         self._runtime_config = config.runtime
         self._prompt_loader = PromptTemplateLoader(
             config.prompts_dir,
-            strict_templates=config.prompts.strict_templates,
+            strict_templates=True,
         )
 
     def _llm(self, *, temperature: float, json_format: bool = True) -> ChatOllama:

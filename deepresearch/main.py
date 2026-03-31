@@ -50,19 +50,13 @@ def parse_args() -> argparse.Namespace:
 
 
 def apply_cli_overrides(config: ResearchConfig, args: argparse.Namespace) -> None:
-    applied_override = False
     if args.model is not None:
         config.model.model_name = args.model
-        applied_override = True
     if args.num_ctx is not None:
         config.model.num_ctx = args.num_ctx
         config.context.target_tokens = args.num_ctx
-        applied_override = True
     if args.max_iterations is not None:
         config.runtime.max_iterations = args.max_iterations
-        applied_override = True
-    if args.config_root is not None or applied_override:
-        config.context.configured_by = "cli_override"
 
 
 def cli() -> int:
@@ -86,8 +80,6 @@ def cli() -> int:
         args.query,
         max_iterations=config.runtime.max_iterations,
         target_tokens=config.context.target_tokens,
-        configured_by=config.context.configured_by,
-        selection_policy=config.context.selection_policy,
     )
     graph = build_graph(runtime)
     final_state = graph.invoke(initial_state)

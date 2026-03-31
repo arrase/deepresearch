@@ -127,8 +127,6 @@ def test_graph_runs_end_to_end_with_fakes() -> None:
         "What is happening to fusion demand?",
         max_iterations=4,
         target_tokens=100000,
-        configured_by="test",
-        selection_policy="hierarchical_relevance_first",
     )
     result = graph.invoke(initial_state)
     assert result["final_report"] is not None
@@ -153,8 +151,6 @@ def test_graph_routes_directly_to_evaluator_when_no_candidate_exists() -> None:
         "What is happening to fusion demand?",
         max_iterations=1,
         target_tokens=100000,
-        configured_by="test",
-        selection_policy="hierarchical_relevance_first",
     )
 
     result = graph.invoke(initial_state)

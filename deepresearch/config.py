@@ -88,8 +88,6 @@ class ContextPolicyConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     target_tokens: int = Field(default=100000, ge=4096)
-    configured_by: str = Field(default="config_file")
-    selection_policy: str = Field(default="hierarchical_relevance_first")
     evidence_budget_ratio: float = Field(default=0.45, gt=0.0, lt=1.0)
     dossier_budget_ratio: float = Field(default=0.30, gt=0.0, lt=1.0)
     local_source_budget_ratio: float = Field(default=0.20, gt=0.0, lt=1.0)
@@ -138,15 +136,6 @@ class RuntimeConfig(BaseModel):
     llm_retry_attempts: int = Field(default=2, ge=0, le=5)
 
 
-class PromptConfig(BaseModel):
-    """Prompt directory and template rendering settings."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    directory: Path = Field(default=Path("prompts"))
-    strict_templates: bool = Field(default=True)
-
-
 class ResearchConfig(BaseModel):
     """Root configuration consumed by the research runtime."""
 
@@ -157,7 +146,6 @@ class ResearchConfig(BaseModel):
     browser: BrowserConfig = Field(default_factory=BrowserConfig)
     search: SearchConfig = Field(default_factory=SearchConfig)
     runtime: RuntimeConfig = Field(default_factory=RuntimeConfig)
-    prompts: PromptConfig = Field(default_factory=PromptConfig)
 
     _config_root: Path = PrivateAttr(default_factory=default_config_root)
     _config_file_path: Path = PrivateAttr(default_factory=lambda: default_config_root() / DEFAULT_CONFIG_FILENAME)
@@ -186,6 +174,4 @@ class ResearchConfig(BaseModel):
 
     @property
     def prompts_dir(self) -> Path:
-        if self.prompts.directory.is_absolute():
-            return self.prompts.directory
-        return self._config_root / self.prompts.directory
+        return self._config_root / "prompts"

@@ -10,8 +10,6 @@ def test_extractor_context_selects_relevant_evidence() -> None:
         "Primary question",
         max_iterations=4,
         target_tokens=100000,
-        configured_by="test",
-        selection_policy="hierarchical_relevance_first",
     )
     subquery = Subquery(question="Subquery", rationale="r", search_terms=["fusion"])
     state["active_subqueries"] = [subquery]

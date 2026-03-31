@@ -171,8 +171,6 @@ class ContextWindowConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     target_tokens: int
-    configured_by: str
-    selection_policy: str
 
 
 class WorkingDossier(BaseModel):
@@ -263,8 +261,6 @@ def build_initial_state(
     *,
     max_iterations: int,
     target_tokens: int,
-    configured_by: str,
-    selection_policy: str,
 ) -> ResearchState:
     return {
         "query": query,
@@ -281,8 +277,6 @@ def build_initial_state(
         "working_dossier": WorkingDossier(),
         "context_window_config": ContextWindowConfig(
             target_tokens=target_tokens,
-            configured_by=configured_by,
-            selection_policy=selection_policy,
         ),
         "final_report": None,
         "is_sufficient": False,

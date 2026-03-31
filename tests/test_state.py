@@ -6,8 +6,6 @@ def test_build_initial_state_has_required_fields() -> None:
         "What is the market outlook for fusion energy?",
         max_iterations=6,
         target_tokens=100000,
-        configured_by="test",
-        selection_policy="hierarchical_relevance_first",
     )
     assert state["query"].startswith("What is")
     assert state["max_iterations"] == 6
