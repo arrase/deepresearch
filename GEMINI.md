@@ -1,81 +1,85 @@
-# Deep Research Project Overview
+# DeepResearch 🔍
 
-`deepresearch` is an auditable deep research pipeline that leverages LangGraph, Ollama, and Lightpanda to perform comprehensive, multi-step research on open-ended queries. It is designed to be transparent, traceable, and capable of running entirely locally.
+DeepResearch is an autonomous, auditable research agent that performs deep-dives into complex, open-ended questions. It uses a graph-based agentic workflow to iteratively plan, search, browse, and evaluate evidence, producing comprehensive reports with full traceability.
 
-## Core Technologies
-- **Orchestration:** [LangGraph](https://github.com/langchain-ai/langgraph) for stateful, multi-actor applications.
-- **LLM:** [Ollama](https://ollama.com/) for local model execution (e.g., Qwen 2.5, Llama 3).
-- **Browsing:** [Lightpanda](https://lightpanda.io/) (via Docker) for high-performance, scriptable web browsing.
-- **Search:** [Tavily](https://tavily.com/) (recommended) or DuckDuckGo for web discovery.
-- **Reporting:** Jinja2 for prompt templating and WeasyPrint for PDF generation.
+## 🚀 Project Overview
 
-## Architecture
-The system operates as a `StateGraph` (defined in `graph.py`) with the following modular nodes:
+- **Core Technology:** [LangGraph](https://github.com/langchain-ai/langgraph) for the agentic orchestration.
+- **LLM Integration:** Optimized for **local models** (e.g., Qwen 2.5, Llama 3) via **Ollama**.
+- **Web Browsing:** Uses [Lightpanda](https://lightpanda.io/), a high-performance headless browser (running in Docker), for web scraping.
+- **Search Backends:** Supports **Tavily** (optimized for LLMs) and **DuckDuckGo** (free/lite).
+- **Architecture:** A stateful `StateGraph` that manages subqueries, evidence extraction, and iterative refinement.
 
-1.  **Planner:** Analyzes the initial query and breaks it down into subqueries, search intents, and hypotheses.
-2.  **Source Manager:** Prioritizes search queries and manages a queue of candidate URLs.
-3.  **Browser:** Navigates to selected URLs using a Docker-managed Lightpanda instance.
-4.  **Extractor:** Uses the LLM to extract atomic evidence from page content, mapped to specific subqueries.
-5.  **Context Manager:** Integrates new evidence into a working dossier, performing deduplication and summarization.
-6.  **Evaluator:** Assesses research coverage, identifies contradictions or gaps, and decides whether to continue or synthesize.
-7.  **Synthesizer:** Generates the final executive answer and structured report with citations.
+## 🛠 Building and Running
 
-## Project Structure
-- `deepresearch/`: Core source code.
-    - `graph.py`: StateGraph assembly and routing logic.
-    - `runtime.py`: Runtime dependencies and container (`ResearchRuntime`).
-    - `nodes/`: Modular implementation of research nodes.
-        - `base.py`: Shared utilities and the `@record_telemetry` decorator.
-        - `planner.py`, `browser.py`, `extractor.py`, etc.: Individual node logic.
-    - `core/`: Central logic and providers.
-        - `llm.py`: Ollama integration, structured parsing, and payload normalization.
-        - `utils.py`: Deterministic workers (deduplication, scoring, text splitting).
-    - `outputs/`: Output formatting and notifications.
-        - `discord.py`: Discord DM integration for reports.
-    - `state.py`: Typed state and evidence models using Pydantic.
-    - `config.py`: Configuration management (Pydantic settings).
-    - `tools.py`: Implementation of search (Tavily/DDG) and browser (Lightpanda) clients.
-- `config/`: Default configuration and prompt templates.
-- `prompts/`: Jinja2 templates for each research stage (Planner, Extractor, etc.).
-- `tests/`: Comprehensive test suite using `pytest`.
+### Prerequisites
+- **Python 3.11+**
+- **Docker:** Required for the Lightpanda browser (`docker pull lightpanda/browser:nightly`).
+- **Ollama:** Running locally with your target model (e.g., `ollama pull qwen2.5:7b`).
 
-## Development Commands
-
-### Environment Setup
-The project requires Python 3.11+ and a running Docker daemon.
+### Installation
 ```bash
-# Install with dev dependencies
+# Clone and install in editable mode with dev dependencies
+git clone <repository_url>
+cd deepresearch
+python -m venv .venv
+source .venv/bin/activate
 pip install -e ".[dev]"
-
-# Ensure Lightpanda image is available
-docker pull lightpanda/browser:nightly
 ```
 
-### Running Research
+### Execution
 ```bash
-# Run a research query (defaults to report.md)
-deepresearch "Future of solid-state batteries in 2024"
+# Basic CLI usage (outputs report.md)
+deepresearch "Your research query here"
 
-# Save as PDF
-deepresearch "Lightpanda vs Playwright" --pdf report.pdf
-
-# Verbose mode for real-time telemetry
-deepresearch "Quantum computing breakthroughs" -v
+# Specialized outputs
+deepresearch "Query" --pdf my_report.pdf
+deepresearch "Query" --discord  # Requires discord configuration
 ```
 
 ### Testing
 ```bash
-# Run all tests
+# Run the test suite
 pytest
 
-# Run specific test suite
+# Run a specific test file
 pytest tests/test_graph_end_to_end.py
 ```
 
-## Development Conventions
-- **Modular Nodes:** Every node in the graph MUST be a class in `deepresearch/nodes/` and use the `@record_telemetry` decorator for auditing.
-- **Type Safety:** Strict use of Pydantic for state (`ResearchState`) and configuration (`ResearchConfig`).
-- **Traceability:** Every piece of `AtomicEvidence` MUST include a source URL, title, and citation locator.
-- **Telemetry:** All major node actions and results are recorded in the state's `telemetry` list for transparency.
-- **Prompts:** All LLM prompts MUST be stored in `prompts/` as Jinja2 templates and loaded via `PromptTemplateLoader`.
-- **Core/Utils Separation:** Open-ended LLM logic belongs in `core/llm.py`; mechanical/deterministic tasks belong in `core/utils.py`.
+## 🏗 System Architecture
+
+### Research State (`deepresearch/state.py`)
+The system relies on a highly structured `ResearchState` (TypedDict) which tracks:
+- **Active/Resolved Subqueries:** The decomposed research agenda.
+- **Atomic Evidence:** Claims backed by specific URLs, quotations, and citations.
+- **Visited/Discarded Sources:** Full audit trail of the browsing history.
+- **Working Dossier:** Intermediate summaries and key points.
+- **Telemetry:** Real-time event log of the agent's internal reasoning.
+
+### Graph Nodes (`deepresearch/nodes/`)
+1.  **Planner:** Decomposes the main query into subqueries and search intents.
+2.  **Source Manager:** Selects the best URLs from search results to visit.
+3.  **Browser:** Navigates to pages using Lightpanda and extracts raw content.
+4.  **Extractor:** Pulls "Atomic Evidence" from page content based on active subqueries.
+5.  **Context Manager:** Updates the internal dossier and manages LLM context windows.
+6.  **Evaluator:** Determines if the research is sufficient or identifies "Gaps" and "Contradictions".
+7.  **Synthesizer:** Generates the final Markdown report from the collected evidence.
+
+### LLM Workers (`deepresearch/core/llm.py`)
+- Uses `ChatOllama` for inference.
+- Implements **Pydantic-based structured output** parsing.
+- Includes a **Repair & Salvage** layer to handle imperfect JSON or truncated responses from smaller local models.
+
+## ⚙️ Configuration
+
+Configuration is managed via Pydantic models in `deepresearch/config.py` and stored in `~/.deepresearch/config/config.toml`.
+- **Prompts:** Jinja2 templates located in `deepresearch/resources/prompts/`. Users can override these by editing the files in their local config root.
+- **Models:** Default model is `qwen2.5:7b` (configurable).
+- **Limits:** Configurable `max_iterations`, context window ratios, and search result counts.
+
+## 📝 Development Conventions
+
+- **Auditability First:** Every claim in the final output must be linked to an `AtomicEvidence` object.
+- **Local-First:** Avoid dependencies on cloud-only LLMs; ensure the pipeline remains performant on consumer hardware.
+- **Type Safety:** Use Pydantic for all data models and internal payloads.
+- **Telemetry:** Always record significant state changes or LLM decisions via the `TelemetryRecorder`.
