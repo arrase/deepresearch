@@ -87,6 +87,14 @@ deepresearch "Comprehensive analysis of solid-state battery tech and its competi
 
 On the first run, the application creates a configuration directory at `~/.deepresearch/config/`.
 
+### Language Support
+You can configure the language for the final research report in `config.toml`. By default, it's set to English, but you can change it to your preferred language (e.g., "Spanish", "French", "German"):
+
+```toml
+[runtime]
+language = "Spanish"
+```
+
 ### Discord Setup
 To use the `--discord` flag, update `config.toml` with your bot credentials:
 ```toml

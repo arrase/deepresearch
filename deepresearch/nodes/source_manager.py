@@ -99,37 +99,6 @@ class SourceManagerNode:
         ]
         ranked.sort(key=lambda item: item.score, reverse=True)
         if not ranked:
-            bootstrap = self._bootstrap_candidates(state)
-            if bootstrap:
-                bootstrap, bootstrap_discarded = deduplicate_candidates(bootstrap, visited_urls=state["visited_urls"])
-                for url, reason, note in bootstrap_discarded:
-                    discarded_sources.append(DiscardedSource(url=url, reason=reason, note=note))
-                bootstrap_ranked = [
-                    score_candidate(
-                        candidate,
-                        active_subqueries=state["active_subqueries"],
-                        visited_urls=state["visited_urls"],
-                        domain_counts=domain_counts,
-                    )
-                    for candidate in bootstrap
-                ]
-                bootstrap_ranked.sort(key=lambda item: item.score, reverse=True)
-                if bootstrap_ranked:
-                    next_candidate = bootstrap_ranked[0]
-                    event = self._runtime.telemetry.record(
-                        "source_manager",
-                        "Activating authoritative bootstrap sources",
-                        selected=next_candidate.url,
-                        candidates=len(bootstrap_ranked),
-                    )
-                    return {
-                        "completed_search_queries": completed,
-                        "discarded_sources": discarded_sources,
-                        "search_queue": bootstrap_ranked[1:],
-                        "current_candidate": next_candidate,
-                        "iteration": state["iteration"] + 1,
-                        "telemetry": [*state["telemetry"], event],
-                    }
             fallback_reason = state["fallback_reason"] or "no_actionable_sources"
             event = self._runtime.telemetry.record(
                 "source_manager",
@@ -168,20 +137,3 @@ class SourceManagerNode:
             if any(term in haystack for term in terms[:6]):
                 matched.append(sq.id)
         return matched
-
-    def _bootstrap_candidates(self, state: ResearchState) -> list[SearchCandidate]:
-        if state["iteration"] > 0:
-            return []
-        
-        # This is a fallback if the first search fails or yields no results
-        # We can try to bootstrap from the initial subqueries
-        return [
-            SearchCandidate(
-                url=f"https://www.google.com/search?q={sq.question}",
-                title=sq.question,
-                snippet="Direct search fallback",
-                discovered_via="bootstrap",
-                subquery_ids=[sq.id],
-            )
-            for sq in state["active_subqueries"][:2]
-        ]

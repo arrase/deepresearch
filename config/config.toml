@@ -41,3 +41,4 @@ output = "pdf"
 [runtime]
 max_iterations = 10
 llm_retry_attempts = 2
+language = "English"

@@ -24,7 +24,7 @@ async def send_discord_report(config: DiscordConfig, report: FinalReport) -> boo
 
     headers = {
         "Authorization": f"Bot {config.token}",
-        "User-Agent": "DeepResearchBot (https://github.com/google/deepresearch, 0.1.0)",
+        "User-Agent": "DeepResearchBot/0.1.0",
     }
 
     async with httpx.AsyncClient(timeout=30.0) as client:

@@ -158,7 +158,10 @@ class LLMWorkers:
         raise ValueError(f"Failed to parse structured output: {last_error}")
 
     def _render_prompt_pair(self, prompt_name: str, variables: dict[str, Any]) -> PromptMessages:
-        return self._prompt_loader.render(prompt_name, variables)
+        return self._prompt_loader.render(
+            prompt_name,
+            {**variables, "language": self._runtime_config.language},
+        )
 
     def _as_langchain_messages(self, prompt_pair: PromptMessages) -> list[SystemMessage | HumanMessage]:
         return [

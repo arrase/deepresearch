@@ -143,6 +143,7 @@ class RuntimeConfig(BaseModel):
 
     max_iterations: int = Field(default=8, ge=1)
     llm_retry_attempts: int = Field(default=2, ge=0, le=5)
+    language: str = Field(default="English")
 
 
 class ResearchConfig(BaseModel):
