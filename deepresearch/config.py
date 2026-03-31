@@ -13,7 +13,7 @@ import shutil
 import tomllib
 import sys
 
-from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, model_validator
 
 
 DEFAULT_CONFIG_ENV_VAR = "DEEPRESEARCH_CONFIG_ROOT"
@@ -87,7 +87,6 @@ class ContextPolicyConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    target_tokens: int = Field(default=100000, ge=4096)
     evidence_budget_ratio: float = Field(default=0.45, gt=0.0, lt=1.0)
     dossier_budget_ratio: float = Field(default=0.30, gt=0.0, lt=1.0)
     local_source_budget_ratio: float = Field(default=0.20, gt=0.0, lt=1.0)

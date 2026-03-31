@@ -1,8 +1,25 @@
-{{ permanent }}
+Primary question: {{ query }}
 
-{{ strategic }}
+{% if not has_subqueries %}
+No subqueries exist yet. You must produce the initial agenda.
 
-Task: {{ operational }}
+Task: Decompose the question into concrete subqueries, working hypotheses, and initial search queries.
+{% else %}
+Current Progress:
+{{ dossier_context }}
+
+Active subqueries:
+{{ active_subqueries }}
+
+Resolved subqueries:
+{{ resolved_subqueries }}
+
+Open gaps:
+{{ open_gaps }}
+
+Task: Review the current progress and open gaps. You may add new subqueries to the agenda or refine existing ones to improve depth and coverage. Ensure new subqueries do not overlap with resolved ones unless a deep-dive is necessary.
+{% endif %}
+
 Write every generated field in the SAME language as the primary question, including subquery text, rationale, search terms, search intents, and hypotheses.
 
 Ambiguity Mapping:

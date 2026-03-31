@@ -18,9 +18,12 @@ from .subagents.deterministic import estimate_tokens, select_evidence_for_contex
 class NodeContext(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    permanent: str
-    strategic: str
-    operational: str
+    query: str
+    has_subqueries: bool = False
+    active_subqueries: str = ""
+    resolved_subqueries: str = ""
+    open_gaps: str = ""
+    dossier_context: str = ""
     evidentiary: list[AtomicEvidence] = Field(default_factory=list)
     local_source: str = ""
 
@@ -46,43 +49,31 @@ class ContextManager:
         )
 
     def _budget(self, ratio: float) -> int:
-        return int(self._config.context.target_tokens * ratio)
+        available_tokens = max(0, self._config.model.num_ctx - self._config.model.num_predict)
+        return int(available_tokens * ratio)
 
     def planner_context(self, state: ResearchState) -> NodeContext:
-        if not state["active_subqueries"] and not state["resolved_subqueries"]:
-            strategic = "No subqueries exist yet. You must produce the initial agenda."
-            operational = "Decompose the question into concrete subqueries, working hypotheses, and initial search queries."
-        else:
-            active = self._render_subqueries(state["active_subqueries"])
-            resolved = self._render_subqueries(state["resolved_subqueries"])
-            gaps = self._render_gaps(state["open_gaps"])
-            
-            # Build a summary of what we know so far
-            dossier_blocks = []
-            if state["working_dossier"].global_summary:
-                dossier_blocks.append(f"Global Summary: {state['working_dossier'].global_summary}")
-            
-            for sq_id, summary in state["working_dossier"].subquery_summaries.items():
-                dossier_blocks.append(f"Subquery {sq_id} findings: {summary}")
-            
-            dossier_context = "\n".join(dossier_blocks)
-            
-            strategic = (
-                f"Current Progress:\n{dossier_context}\n\n"
-                f"Active subqueries:\n{active}\n\n"
-                f"Resolved subqueries:\n{resolved}\n\n"
-                f"Open gaps:\n{gaps}"
-            ).strip()
-            operational = (
-                "Review the current progress and open gaps. "
-                "You may add new subqueries to the agenda or refine existing ones to improve depth and coverage. "
-                "Ensure new subqueries do not overlap with resolved ones unless a deep-dive is necessary."
-            )
-
+        has_subqueries = bool(state["active_subqueries"] or state["resolved_subqueries"])
+        active = self._render_subqueries(state["active_subqueries"]) if has_subqueries else ""
+        resolved = self._render_subqueries(state["resolved_subqueries"]) if has_subqueries else ""
+        gaps = self._render_gaps(state["open_gaps"]) if has_subqueries else ""
+        
+        dossier_blocks = []
+        if state["working_dossier"].global_summary:
+            dossier_blocks.append(f"Global Summary: {state['working_dossier'].global_summary}")
+        
+        for sq_id, summary in state["working_dossier"].subquery_summaries.items():
+            dossier_blocks.append(f"Subquery {sq_id} findings: {summary}")
+        
+        dossier_context = "\n".join(dossier_blocks)
+        
         return NodeContext(
-            permanent=f"Primary question: {state['query']}",
-            strategic=strategic,
-            operational=operational,
+            query=state["query"],
+            has_subqueries=has_subqueries,
+            active_subqueries=active,
+            resolved_subqueries=resolved,
+            open_gaps=gaps,
+            dossier_context=dossier_context,
         )
 
     def extractor_context(
@@ -98,12 +89,9 @@ class ContextManager:
             budget_tokens=self._budget(self._config.context.evidence_budget_ratio),
         )
         return NodeContext(
-            permanent=f"Primary question: {state['query']}",
-            strategic=(
-                f"Active subqueries:\n{self._render_subqueries(state['active_subqueries'])}\n"
-                f"Open gaps:\n{self._render_gaps(state['open_gaps'])}"
-            ).strip(),
-            operational="Extract traceable atomic evidence without inferring beyond the source text.",
+            query=state["query"],
+            active_subqueries=self._render_subqueries(state["active_subqueries"]),
+            open_gaps=self._render_gaps(state["open_gaps"]),
             evidentiary=evidence,
             local_source=local_source,
         )
@@ -115,26 +103,16 @@ class ContextManager:
             budget_tokens=self._budget(self._config.context.evidence_budget_ratio),
         )
         
-        # Enrichment from WorkingDossier
         dossier_summary = ""
         if state["working_dossier"].global_summary:
             dossier_summary = f"Global Progress Summary: {state['working_dossier'].global_summary}\n\n"
         
-        strategic = (
-            f"{dossier_summary}"
-            f"Active subqueries:\n{self._render_subqueries(state['active_subqueries'])}\n"
-            f"Resolved subqueries:\n{self._render_subqueries(state['resolved_subqueries'])}\n"
-            f"Open gaps:\n{self._render_gaps(state['open_gaps'])}"
-        ).strip()
-        operational = (
-            "Evaluate coverage, contradictions, and sufficiency. "
-            "Use the progress summary to identify missing nuances or unaddressed facets. "
-            "Generate detailed open gaps if certain subqueries require deeper investigation."
-        )
         return NodeContext(
-            permanent=f"Primary question: {state['query']}",
-            strategic=strategic,
-            operational=operational,
+            query=state["query"],
+            dossier_context=dossier_summary,
+            active_subqueries=self._render_subqueries(state["active_subqueries"]),
+            resolved_subqueries=self._render_subqueries(state["resolved_subqueries"]),
+            open_gaps=self._render_gaps(state["open_gaps"]),
             evidentiary=evidence,
         )
 
@@ -169,12 +147,9 @@ class ContextManager:
         )
         if estimate_tokens(dossier) > budget:
             dossier = dossier[: budget * 4]
+            
         return NodeContext(
-            permanent=f"Primary question: {state['query']}",
-            strategic=dossier,
-            operational=(
-                "Write a final conceptual Markdown report with an executive summary, thematic analysis, confidence, reservations, gaps, and citations. "
-                "Every block must rely only on relevant evidence."
-            ),
+            query=state["query"],
+            dossier_context=dossier,
             evidentiary=evidence,
         )

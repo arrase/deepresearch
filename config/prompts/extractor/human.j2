@@ -1,6 +1,9 @@
-{{ permanent }}
+Primary question: {{ query }}
 
-{{ strategic }}
+Active subqueries:
+{{ active_subqueries }}
+Open gaps:
+{{ open_gaps }}
 
 Prior evidence:
 {{ evidentiary }}
@@ -8,5 +11,4 @@ Prior evidence:
 Current source:
 {{ local_source }}
 
-Task: {{ operational }}
-Return up to 8 evidence items if they are relevant. Keep caveats and summaries detailed but concise.
+Task: Extract traceable atomic evidence without inferring beyond the source text. Return up to 8 evidence items if they are relevant. Keep caveats and summaries detailed but concise.

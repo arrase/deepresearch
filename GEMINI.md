@@ -1,87 +1,81 @@
-# Deep Research: Project Context
+# Deep Research Project Overview
 
-Deep Research is an auditable research pipeline designed to transform open-ended questions into bounded, high-quality research reports with explicit citations. It utilizes a stateful graph-based architecture to manage a research loop involving planning, source discovery, web browsing, evidence extraction, and synthesis.
+`deepresearch` is an auditable deep research pipeline that leverages LangGraph, Ollama, and Lightpanda to perform comprehensive, multi-step research on open-ended queries. It is designed to be transparent, traceable, and capable of running entirely locally using local LLMs.
 
-## Core Architecture & Technologies
+## Core Technologies
+- **Orchestration:** [LangGraph](https://github.com/langchain-ai/langgraph) for stateful, multi-actor applications.
+- **LLM:** [Ollama](https://ollama.com/) for local model execution (e.g., Qwen 2.5).
+- **Browsing:** [Lightpanda](https://lightpanda.io/) (via Docker) for high-performance, scriptable web browsing.
+- **Search:** [Tavily](https://tavily.com/) or DuckDuckGo for web discovery.
+- **Reporting:** Jinja2 for prompt templating and WeasyPrint for PDF generation.
 
-- **Workflow Orchestration**: Built with [LangGraph](https://github.com/langchain-ai/langgraph), using an explicit `ResearchState` to manage the research lifecycle without relying on conversation history.
-- **LLM Backend**: Powered by [Ollama](https://ollama.com/) (ChatOllama) for all reasoning, extraction, and synthesis tasks.
-- **Browser Backend**: Uses [Lightpanda](https://lightpanda.io/) (via Docker) as a high-performance headless browser for reliable web scraping.
-- **Search Backend**: Supports DuckDuckGo (default) and Tavily.
-- **Prompt Management**: Prompts are stored as [Jinja2](https://jinja.palletsprojects.com/) templates in `config/prompts/`, allowing for easy customization without modifying Python code.
-- **Configuration**: Uses TOML (`config/config.toml`) for managing model settings, context window policies, and runtime limits.
-- **Multi-format Reports**: Supports both Markdown and PDF output formats. PDF reports are styled via WeasyPrint.
-- **Discord Integration**: Reports can be sent directly to Discord as file attachments (PDF/Markdown) via bot DM.
+## Architecture
+The system operates as a `StateGraph` with the following key nodes:
+
+1.  **Planner:** Analyzes the initial query and breaks it down into subqueries, search intents, and hypotheses.
+2.  **Source Manager:** Prioritizes search queries and manages a queue of candidate URLs.
+3.  **Browser:** Navigates to selected URLs using a Docker-managed Lightpanda instance.
+4.  **Extractor:** Uses the LLM to extract atomic evidence from the page content, mapped back to specific subqueries.
+5.  **Context Manager:** Integrates new evidence into a working dossier, performing deduplication and summarization.
+6.  **Evaluator:** Assesses research coverage, identifies contradictions or gaps, and decides whether to continue or synthesize the final report.
+7.  **Synthesizer:** Generates the final executive answer and structured report with citations.
 
 ## Project Structure
+- `deepresearch/`: Core source code.
+    - `graph.py`: StateGraph assembly and routing logic.
+    - `nodes.py`: Implementation of research nodes (Planner, Browser, etc.).
+    - `state.py`: Typed state and evidence models using Pydantic.
+    - `config.py`: Configuration management (Pydantic settings).
+    - `tools.py`: Implementation of search and browser clients.
+    - `subagents/`: Specialized LLM and communication workers.
+- `config/`: Default configuration and prompt templates.
+- `prompts/`: Jinja2 templates for each research stage.
+- `tests/`: Comprehensive test suite using `pytest`.
 
-- `deepresearch/`: Core Python package.
-  - `graph.py`: Defines the LangGraph `StateGraph` and routing logic.
-  - `nodes.py`: Contains the `ResearchNodes` class, implementing the logic for each graph step (planner, browser, extractor, etc.).
-  - `state.py`: Defines the `ResearchState` TypedDict and other data models (Pydantic).
-  - `subagents/`: Specialized workers for LLM tasks and deterministic data processing.
-  - `context_manager.py`: Manages the assembly of context for LLM prompts.
-  - `output_utils.py`: Centralized logic for PDF generation and multi-format output.
-  - `telemetry.py`: Handles console logging.
-  - `tools.py`: Search and browser clients.
-- `config/`: Configuration root.
-  - `config.toml`: Global settings.
-  - `prompts/`: Jinja2 templates for different stages (planner, extractor, synthesizer, etc.).
-- `tests/`: Comprehensive test suite for state, tools, and end-to-end graph execution.
+## Development Commands
 
-## Research Workflow
-
-The research process follows a directed graph:
-
-1.  **Planner**: Generates a research agenda with subqueries and search intents.
-2.  **Source Manager**: Discovers and prioritizes candidate URLs.
-3.  **Browser**: Fetches and cleans content using Lightpanda.
-4.  **Extractor**: Pulls atomic evidence (claims, quotations, citations).
-5.  **Context Manager**: Integrates evidence into the "Working Dossier".
-6.  **Evaluator**: Assesses research coverage and decides if more iterations are needed.
-7.  **Synthesizer**: Generates the final Markdown report with referenced sources.
-
-## Building and Running
-
-### Prerequisites
-- Python 3.11 or higher.
-- [Ollama](https://ollama.com/) installed and running.
-- [Docker](https://www.docker.com/) installed and running (for Lightpanda).
-- WeasyPrint system dependencies (pango, cairo, etc. - OS dependent).
-
-### Installation
+### Environment Setup
+The project requires Python 3.11+ and a running Docker daemon (for Lightpanda).
 ```bash
-pip install -e .
+# Install with dev dependencies
+pip install -e ".[dev]"
+
+# Ensure Lightpanda image is available
+docker pull lightpanda/browser:nightly
 ```
 
 ### Running Research
 ```bash
-# Run a basic research session (defaults to report.md)
-deepresearch "What are the latest developments in fusion energy?"
+# Run a research query (defaults to markdown output)
+deepresearch "How does Lightpanda compare to Playwright for LLM scraping?"
 
-# Generate a markdown report at a specific path
-deepresearch "..." --markdown my_report.md
+# Save as PDF
+deepresearch "The impact of Llama 3 on local AI" --pdf report.pdf
 
-# Generate a PDF report
-deepresearch "..." --pdf my_report.pdf
-
-# Send to Discord (uses output format from config.toml, defaults to PDF)
-deepresearch "..." --discord
-
-# Run with verbose telemetry
-deepresearch "..." -v
+# Verbose mode for real-time telemetry
+deepresearch "Quantum computing breakthroughs 2024" -v
 ```
 
-### Running Tests
+### Testing
 ```bash
+# Run all tests
 pytest
+
+# Run a specific test file
+pytest tests/test_graph_end_to_end.py
 ```
 
-## Development Conventions
+## Configuration
+Configuration is managed via `config.toml`. The system looks for it in `~/.deepresearch/config/config.toml` or as specified by the `--config-root` CLI flag. On the first run, it will bootstrap a default configuration in the home directory.
 
-- **State over History**: Never rely on LLM conversation history for state. All relevant information must be persisted in the `ResearchState`.
-- **Prompt Decoupling**: Do NOT use inline strings for LLM prompts. Always use the Jinja2 templates in `config/prompts/`.
-- **Deterministic Processing**: Use deterministic workers (in `deepresearch/subagents/deterministic.py`) for data cleanup, scoring, and deduplication.
-- **Type Safety**: Use Pydantic models for data structures and maintain strict type hinting.
-- **Telemetry**: Significant events are recorded via the `TelemetryRecorder` to the console.
-- **Browser Usage**: Web interaction is handled through `LightpandaDockerManager`. Ensure the Docker daemon is accessible.
+Key configuration areas:
+- `[model]`: Ollama model names, context window sizes, and temperatures.
+- `[search]`: Search backend (Tavily/DuckDuckGo) and API keys.
+- `[browser]`: Docker image and timeout settings.
+- `[runtime]`: Max iterations and retry logic.
+
+## Coding Conventions
+- **Type Safety:** Strict use of Pydantic for state and configuration.
+- **Traceability:** Every piece of evidence MUST include a source URL and citation locator.
+- **Telemetry:** All major node actions should be recorded in the state's `telemetry` list for auditability.
+- **Prompts:** All LLM prompts MUST be stored in `prompts/` as Jinja2 templates.

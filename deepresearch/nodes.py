@@ -61,7 +61,7 @@ class ResearchNodes:
             state,
             "planner",
             "Starting planning with the LLM",
-            query=state["query"][:120],
+            query=state["query"],
         )
         context = self._runtime.context_manager.planner_context(state)
         payload = self._runtime.llm_workers.plan_research(context)

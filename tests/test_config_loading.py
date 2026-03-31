@@ -45,5 +45,4 @@ def test_cli_overrides_take_precedence_over_toml_config(tmp_path) -> None:
 
     assert config.model.model_name == "custom-model"
     assert config.model.num_ctx == 32768
-    assert config.context.target_tokens == 32768
     assert config.runtime.max_iterations == 5

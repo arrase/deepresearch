@@ -60,7 +60,6 @@ def apply_cli_overrides(config: ResearchConfig, args: argparse.Namespace) -> Non
         config.model.model_name = args.model
     if args.num_ctx is not None:
         config.model.num_ctx = args.num_ctx
-        config.context.target_tokens = args.num_ctx
     if args.max_iterations is not None:
         config.runtime.max_iterations = args.max_iterations
 
@@ -85,7 +84,6 @@ def cli() -> int:
     initial_state = build_initial_state(
         args.query,
         max_iterations=config.runtime.max_iterations,
-        target_tokens=config.context.target_tokens,
     )
     graph = build_graph(runtime)
     final_state = graph.invoke(initial_state)

@@ -1,114 +1,106 @@
-# Deep Research
+# DeepResearch 🔍
 
-Deep Research is an auditable, stateful research pipeline designed to transform open-ended questions into high-quality research reports with explicit citations. It uses a graph-based architecture to manage a research loop involving planning, source discovery, web browsing, evidence extraction, and synthesis.
+**DeepResearch** is an autonomous, auditable research agent that performs deep-dives into complex, open-ended questions. Unlike simple RAG systems, it iteratively plans, searches, browses, and evaluates evidence until it finds a comprehensive answer—all powered by local LLMs via Ollama.
 
-The system is optimized for **local LLMs** (via Ollama) and features a robust "mechanical" layer for data cleanup, scoring, and deduplication, ensuring that the final output is reliable and verifiable.
+## ✨ Key Features
 
-## Key Features
+- **Autonomous Research:** Decomposes complex queries into subqueries and search intents.
+- **Local-First:** Optimized for local models (like Qwen 2.5 or Llama 3) via Ollama. No data leaves your machine except for web searches.
+- **Web-Scale Browsing:** Uses [Lightpanda](https://lightpanda.io/), a high-performance headless browser, to navigate and extract content from the real web.
+- **Traceable & Auditable:** Every claim in the final report is backed by atomic evidence, specific URLs, and direct quotations.
+- **Iterative Refinement:** Evaluates its own progress, identifies knowledge gaps or contradictions, and performs follow-up searches.
+- **Rich Output:** Generates structured Markdown, professional PDF reports, or sends findings directly to Discord.
+- **Agentic Skill:** Compatible with agents like OpenClaw and Gemini CLI as a specialized research skill.
 
-- **Multi-format Output**: Generate research reports in both Markdown and professional PDF formats (via WeasyPrint), with custom styling and page numbering.
-- **Discord Integration**: Automatically send research reports to Discord as file attachments (PDF or Markdown).
-- **Stateful Research Loop**: Built with [LangGraph](https://github.com/langchain-ai/langgraph), the system manages the research lifecycle through a series of specialized nodes (Planner, Browser, Extractor, Evaluator, Synthesizer).
-- **Local LLM Support**: Powered by [Ollama](https://ollama.com/), allowing for private and cost-effective research sessions using models like Qwen 2.5 or Llama 3.
-- **Auditable Reports**: Every claim in the final report is linked to an `evidence_id`, which is traced back to a specific source URL and quotation.
-- **Headless Browsing**: Uses [Lightpanda](https://lightpanda.io/) (via Docker) as a high-performance headless browser for reliable web scraping and evidence extraction.
-- **Robust Data Handling**: Includes a "salvage" layer for fixing imperfect JSON outputs from smaller local models and deterministic workers for URL canonicalization, deduplication, and heuristic scoring.
-- **Customizable Prompts**: Prompts are stored as [Jinja2](https://jinja.palletsprojects.com/) templates in `config/prompts/`, allowing for easy fine-tuning of the research behavior without modifying the core logic.
+## 🚀 Getting Started
 
-## Architecture Overview
+### 📋 Prerequisites
 
-The research process follows a directed graph:
+1.  **Python 3.11+**
+2.  **Docker (Mandatory):** Required to run the Lightpanda browser instance for web scraping.
+3.  **Ollama:** Installed and running with your preferred model (e.g., `ollama pull qwen2.5:7b`).
 
-1.  **Planner**: Analyzes the initial query and generates a research agenda with subqueries and search intents.
-2.  **Source Manager**: Discovers and prioritizes candidate URLs based on the current research gaps.
-3.  **Browser**: Fetches and cleans content from candidate pages using a Docker-managed Lightpanda instance.
-4.  **Extractor**: Pulls atomic evidence (claims, quotations, citations) from the fetched content.
-5.  **Context Manager**: Assembles the "Working Dossier" and manages the token budget for the LLM.
-6.  **Evaluator**: Assesses research coverage, identifies contradictions, and decides if more iterations are needed.
-7.  **Synthesizer**: Generates a comprehensive Markdown report with an executive answer and referenced sources.
+### 📦 Installation
 
-## Prerequisites
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/yourusername/deepresearch.git
+   cd deepresearch
+   ```
 
-- **Python**: 3.11 or higher.
-- **Ollama**: Installed and running (for the LLM backend).
-- **Docker**: Installed and running (for the Lightpanda browser).
-- **System Libraries**: `weasyprint` may require additional system dependencies (like `pango`, `cairo`, `gdk-pixbuf`) depending on your OS.
+2. **Set up a virtual environment:**
+   ```bash
+   python -m venv .venv
+   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+   ```
 
-## Installation
+3. **Install dependencies:**
+   ```bash
+   pip install -e .
+   ```
 
-1.  Clone the repository:
-    ```bash
-    git clone https://github.com/your-repo/deepresearch.git
-    cd deepresearch
-    ```
+4. **Pull the browser image:**
+   ```bash
+   docker pull lightpanda/browser:nightly
+   ```
 
-2.  Install the package in editable mode:
-    ```bash
-    pip install -e .
-    ```
+## 🛠 Usage
 
-3.  Ensure you have the required Ollama model (default is `qwen3.5:9b` or similar):
-    ```bash
-    ollama pull qwen3.5:9b
-    ```
-
-## Usage
-
-Run a research session by providing a query:
+You can run the research pipeline directly from your terminal:
 
 ```bash
-deepresearch "What are the latest developments in fusion energy for 2025?"
+# Basic research (outputs report.md)
+deepresearch "What are the latest breakthroughs in solid-state battery technology in 2024?"
+
+# Generate a PDF report
+deepresearch "Compare Lightpanda vs Playwright for LLM-based web scraping" --pdf comparative_analysis.pdf
+
+# Send the final report to Discord
+deepresearch "The impact of Llama 3 on local AI" --discord
 ```
 
-### CLI Options
+### ⌨️ CLI Arguments
 
-- `--markdown <path>`: Path to save the final Markdown report.
-- `--pdf <path>`: Path to save the final PDF report (professionally styled).
-- `--model <name>`: Override the default Ollama model name.
-- `--config-root <path>`: Use a custom configuration directory.
-- `--max-iterations <int>`: Set the maximum number of research cycles.
-- `--discord`: Send the final report to a Discord user via DM as a file attachment. When used, the report is NOT saved to disk unless `--markdown` or `--pdf` are also specified.
-- `-v, --verbose`: Enable detailed console telemetry to follow the research process in real-time.
+| Argument | Description |
+| :--- | :--- |
+| `query` | The open-ended research question (required). |
+| `--markdown PATH` | Save the final report as a Markdown file at the specified path. |
+| `--pdf PATH` | Save the final report as a PDF file at the specified path. |
+| `--discord` | Send the final report and executive summary to a configured Discord user via DM. |
+| `--model NAME` | Override the default Ollama model (e.g., `qwen2.5:14b`). |
+| `--num-ctx N` | Override the LLM context window size (default: 100,000+). |
+| `--max-iterations N` | Limit the number of research cycles (default: 8). |
+| `--config-root PATH` | Path to an editable configuration directory. |
+| `-v, --verbose` | Enable real-time telemetry to watch the agent's internal process. |
 
-## Configuration
+## 🤖 Skill Integration (OpenClaw / Gemini CLI)
 
-The project uses a TOML-based configuration system. On the first run, it will bootstrap a default configuration in `~/.deepresearch/config`.
+DeepResearch can be used as a "skill" by AI agents. When activated, the agent uses the `deepresearch` command to perform exhaustive background research before responding to the user.
 
-- **`config.toml`**: Manage model parameters (temperature, context window), browser settings, and research limits.
-- **`discord` section**: 
-    - `token`: Your Discord bot token.
-    - `user_id`: Your Discord user ID.
-    - `output`: Set to `"pdf"` (default) or `"markdown"` to choose the attachment format.
-- **`prompts/`**: Edit the Jinja2 templates to change how the LLM plans, extracts evidence, or synthesizes the final report.
-
-## AI Agent Integration (Skills)
-
-This project includes a **Skill** definition (located in `skill/deepresearch/SKILL.md`) designed for [OpenClaw](https://github.com/openclaw/openclaw) and any other AI agent that implements a skill-based architecture. 
-
-This allows agents to autonomously invoke Deep Research to fulfill complex information-gathering requests, performing extensive web searches and generating detailed reports.
-
-### Using Skills with Agents
-
-When an agent (like OpenClaw) identifies a task requiring in-depth analysis or factual verification:
-1.  The agent formulates a precise research query based on the user's intent.
-2.  It executes the research in the background using the `--discord` flag.
-3.  The final synthesized report is delivered directly to your configured Discord channel.
-
-**Example Command (Agent-triggered):**
+**Example Agent Command:**
 ```bash
-deepresearch "Comprehensive analysis of current state of solid-state battery technology" --discord
+# The agent will run this in the background
+deepresearch "Comprehensive analysis of solid-state battery tech and its competitors" --discord
 ```
 
-## Development
+## ⚙️ Configuration
 
-### Project Structure
+On the first run, the application creates a configuration directory at `~/.deepresearch/config/`.
 
-- `deepresearch/`: Core Python package.
-  - `graph.py`: LangGraph workflow definition.
-  - `nodes.py`: Node implementations (logic for each research step).
-  - `state.py`: Typed data models and Pydantic schemas.
-  - `subagents/`: Specialized workers (LLM reasoning and deterministic data processing).
-  - `context_manager.py`: Context assembly and token budgeting.
-  - `output_utils.py`: PDF generation and other output helpers.
-- `config/`: Default configuration and prompt templates.
-- `tests/`: Comprehensive test suite using Pytest.
+### Discord Setup
+To use the `--discord` flag, update `config.toml` with your bot credentials:
+```toml
+[discord]
+token = "YOUR_BOT_TOKEN"
+user_id = "YOUR_DISCORD_USER_ID"
+output = "pdf" # or "markdown"
+```
+
+### Search Backend
+You can switch between search providers in `config.toml`:
+- **Tavily (Recommended):** High-quality search for LLMs. Requires an `api_key`.
+- **DuckDuckGo:** Free, lite backend with no API key required.
+
+## 📜 License
+
+Distributed under the MIT License. See `LICENSE` for more information.

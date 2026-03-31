@@ -5,12 +5,11 @@ temperature_planner = 0.2
 temperature_extractor = 0.0
 temperature_evaluator = 0.0
 temperature_synthesizer = 0.1
-num_ctx = 100000
+num_ctx = 150000
 num_predict = 8192
 timeout_seconds = 120
 
 [context]
-target_tokens = 100000
 evidence_budget_ratio = 0.45
 dossier_budget_ratio = 0.30
 local_source_budget_ratio = 0.20

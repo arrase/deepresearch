@@ -170,7 +170,6 @@ class Gap(BaseModel):
 class ContextWindowConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    target_tokens: int
 
 
 class WorkingDossier(BaseModel):
@@ -260,7 +259,6 @@ def build_initial_state(
     query: str,
     *,
     max_iterations: int,
-    target_tokens: int,
 ) -> ResearchState:
     return {
         "query": query,
@@ -275,9 +273,7 @@ def build_initial_state(
         "contradictions": [],
         "open_gaps": [],
         "working_dossier": WorkingDossier(),
-        "context_window_config": ContextWindowConfig(
-            target_tokens=target_tokens,
-        ),
+        "context_window_config": ContextWindowConfig(),
         "final_report": None,
         "is_sufficient": False,
         "hypotheses": [],
