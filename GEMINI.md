@@ -6,9 +6,9 @@ Deep Research is an auditable research pipeline designed to transform open-ended
 
 - **Workflow Orchestration**: Built with [LangGraph](https://github.com/langchain-ai/langgraph), using an explicit `ResearchState` to manage the research lifecycle without relying on conversation history.
 - **LLM Backend**: Powered by [Ollama](https://ollama.com/) (ChatOllama) for all reasoning, extraction, and synthesis tasks.
-- **Browser Backend**: Uses [Lightpanda](https://lightpanda.io/) (via Docker) as a headless browser for reliable web scraping.
-- **Search Backend**: Default search is via DuckDuckGo Lite HTML parsing.
-- **Prompt Management**: Prompts are stored as [Jinja2](https://jinja.palletsprojects.com/) templates in the `config/prompts/` directory, allowing for easy customization without modifying Python code.
+- **Browser Backend**: Uses [Lightpanda](https://lightpanda.io/) (via Docker) as a high-performance headless browser for reliable web scraping.
+- **Search Backend**: Supports DuckDuckGo (default) and Tavily.
+- **Prompt Management**: Prompts are stored as [Jinja2](https://jinja.palletsprojects.com/) templates in `config/prompts/`, allowing for easy customization without modifying Python code.
 - **Configuration**: Uses TOML (`config/config.toml`) for managing model settings, context window policies, and runtime limits.
 
 ## Project Structure
@@ -20,7 +20,23 @@ Deep Research is an auditable research pipeline designed to transform open-ended
   - `subagents/`: Specialized workers for LLM tasks and deterministic data processing.
   - `context_manager.py`: Manages the assembly of context for LLM prompts.
   - `telemetry.py`: Handles console logging.
+  - `tools.py`: Search and browser clients.
 - `config/`: Configuration root.
+  - `config.toml`: Global settings.
+  - `prompts/`: Jinja2 templates for different stages (planner, extractor, synthesizer, etc.).
+- `tests/`: Comprehensive test suite for state, tools, and end-to-end graph execution.
+
+## Research Workflow
+
+The research process follows a directed graph:
+
+1.  **Planner**: Generates a research agenda with subqueries and search intents.
+2.  **Source Manager**: Discovers and prioritizes candidate URLs.
+3.  **Browser**: Fetches and cleans content using Lightpanda.
+4.  **Extractor**: Pulls atomic evidence (claims, quotations, citations).
+5.  **Context Manager**: Integrates evidence into the "Working Dossier".
+6.  **Evaluator**: Assesses research coverage and decides if more iterations are needed.
+7.  **Synthesizer**: Generates the final Markdown report with referenced sources.
 
 ## Building and Running
 
@@ -39,11 +55,11 @@ pip install -e .
 # Run a basic research session
 deepresearch "What are the latest developments in fusion energy?"
 
-# Run with a custom configuration root
-deepresearch "..." --config-root ./my-config
-
 # Specify an output file
 deepresearch "..." -o my_report.md
+
+# Run with verbose telemetry
+deepresearch "..." -v
 ```
 
 ### Running Tests
@@ -54,8 +70,8 @@ pytest
 ## Development Conventions
 
 - **State over History**: Never rely on LLM conversation history for state. All relevant information must be persisted in the `ResearchState`.
-- **Prompt Decoupling**: Do NOT use inline strings for LLM prompts, format instructions, or any other text intended for the LLM. Always use the Jinja2 templates in `config/prompts/` to maintain a clear separation between logic and instructions.
-- **Deterministic Processing**: Use deterministic workers (in `deepresearch/subagents/deterministic.py`) for data cleanup, scoring, and deduplication to ensure consistency.
-- **Type Safety**: Use Pydantic models for data structures and maintain strict type hinting throughout the codebase.
-- **Telemetry**: Significant events are recorded via the `TelemetryRecorder` to console. Every run should produce a markdown report in the location specified by the user.
-- **Browser Usage**: Web interaction is handled through `LightpandaDockerManager`. Ensure the Docker daemon is accessible during runtime.
+- **Prompt Decoupling**: Do NOT use inline strings for LLM prompts. Always use the Jinja2 templates in `config/prompts/`.
+- **Deterministic Processing**: Use deterministic workers (in `deepresearch/subagents/deterministic.py`) for data cleanup, scoring, and deduplication.
+- **Type Safety**: Use Pydantic models for data structures and maintain strict type hinting.
+- **Telemetry**: Significant events are recorded via the `TelemetryRecorder` to the console.
+- **Browser Usage**: Web interaction is handled through `LightpandaDockerManager`. Ensure the Docker daemon is accessible.

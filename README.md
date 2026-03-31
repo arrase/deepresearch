@@ -63,6 +63,7 @@ deepresearch "What are the latest developments in fusion energy for 2025?"
 - `--model <name>`: Override the default Ollama model name.
 - `--config-root <path>`: Use a custom configuration directory.
 - `--max-iterations <int>`: Set the maximum number of research cycles.
+- `--discord`: Send the final report to a Discord user via DM (requires configuration).
 - `-v, --verbose`: Enable detailed console telemetry to follow the research process in real-time.
 
 ## Configuration
@@ -70,6 +71,7 @@ deepresearch "What are the latest developments in fusion energy for 2025?"
 The project uses a TOML-based configuration system. On the first run, it will bootstrap a default configuration in `~/.deepresearch/config`.
 
 - **`config.toml`**: Manage model parameters (temperature, context window), browser settings, and research limits.
+- **`discord` section**: Add your `token` and `user_id` to enable Discord notifications.
 - **`prompts/`**: Edit the Jinja2 templates to change how the LLM plans, extracts evidence, or synthesizes the final report.
 
 ## Development

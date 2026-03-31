@@ -127,6 +127,15 @@ class SearchConfig(BaseModel):
     )
 
 
+class DiscordConfig(BaseModel):
+    """Discord notification settings."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    token: str | None = Field(default=None)
+    user_id: str | None = Field(default=None)
+
+
 class RuntimeConfig(BaseModel):
     """Technical safeguards and output locations."""
 
@@ -145,6 +154,7 @@ class ResearchConfig(BaseModel):
     context: ContextPolicyConfig = Field(default_factory=ContextPolicyConfig)
     browser: BrowserConfig = Field(default_factory=BrowserConfig)
     search: SearchConfig = Field(default_factory=SearchConfig)
+    discord: DiscordConfig = Field(default_factory=DiscordConfig)
     runtime: RuntimeConfig = Field(default_factory=RuntimeConfig)
 
     _config_root: Path = PrivateAttr(default_factory=default_config_root)

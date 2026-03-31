@@ -39,11 +39,12 @@ def build_runtime(config: ResearchConfig, verbose: bool = False) -> ResearchRunt
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Auditable deep research with LangGraph, Ollama, and Lightpanda")
     parser.add_argument("query", help="Open-ended research question")
-    parser.add_argument("-o", "--output", help="Path to write the final markdown report", default="report.md")
+    parser.add_argument("-o", "--output", help="Path to write the final markdown report", default=None)
     parser.add_argument("--config-root", default=None, help="Path to the editable config root")
     parser.add_argument("--model", default=None, help="Ollama model name override")
     parser.add_argument("--num-ctx", type=int, default=None, help="Context window size override")
     parser.add_argument("--max-iterations", type=int, default=None, help="Max research iterations override")
+    parser.add_argument("--discord", action="store_true", help="Send the final report to Discord")
     parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose console telemetry")
 
     return parser.parse_args()
@@ -89,16 +90,38 @@ def cli() -> int:
         print(json.dumps({"error": "Failed to generate final report"}, indent=2, ensure_ascii=True))
         return 2
 
-    output_path = Path(args.output)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(final_report.markdown_report, encoding="utf-8")
+    # File output logic:
+    # 1. If -o/--output is explicitly provided, use it.
+    # 2. If --discord is NOT used, default to "report.md".
+    # 3. If --discord IS used and no -o was provided, skip file writing.
+    output_target = args.output
+    if output_target is None and not args.discord:
+        output_target = "report.md"
 
-    if args.verbose:
-        print(
-            f"Final report generated and saved to: {output_path}",
-            file=sys.stderr,
-            flush=True,
-        )
+    if output_target:
+        output_path = Path(output_target)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(final_report.markdown_report, encoding="utf-8")
+
+        if args.verbose:
+            print(
+                f"Final report generated and saved to: {output_path}",
+                file=sys.stderr,
+                flush=True,
+            )
+
+    if args.discord:
+        import asyncio
+        from .subagents.discord import send_discord_report
+        
+        print("Sending report to Discord...", file=sys.stderr, flush=True)
+        success = asyncio.run(send_discord_report(config.discord, final_report))
+        
+        if success:
+            print("Report sent to Discord successfully.", file=sys.stderr, flush=True)
+        else:
+            print("Failed to send report to Discord. Check your configuration.", file=sys.stderr, flush=True)
+
     print(final_report.executive_answer)
     return 0
 

@@ -61,4 +61,11 @@ SUBAGENT_REGISTRY: dict[str, SubagentContract] = {
         outputs=("coverage_assessment", "gaps", "contradictions"),
         rationale="Detecting non-trivial gaps and subtle contradictions can require semantic compression.",
     ),
+    "discord_notifier": SubagentContract(
+        name="discord_notifier",
+        kind=SubagentKind.DETERMINISTIC,
+        inputs=("config", "report"),
+        outputs=("success",),
+        rationale="Sending a notification to an external API is a mechanical side-effect.",
+    ),
 }
