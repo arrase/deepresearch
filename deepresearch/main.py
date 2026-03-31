@@ -17,9 +17,9 @@ from .telemetry import TelemetryRecorder
 from .tools import DuckDuckGoSearchClient, LightpandaDockerManager, TavilySearchClient
 
 
-def build_runtime(config: ResearchConfig) -> ResearchRuntime:
+def build_runtime(config: ResearchConfig, verbose: bool = False) -> ResearchRuntime:
     telemetry = TelemetryRecorder(
-        echo_to_console=True,
+        echo_to_console=verbose,
     )
     if config.search.backend == "tavily":
         search_client = TavilySearchClient(config.search)
@@ -44,7 +44,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model", default=None, help="Ollama model name override")
     parser.add_argument("--num-ctx", type=int, default=None, help="Context window size override")
     parser.add_argument("--max-iterations", type=int, default=None, help="Max research iterations override")
-    parser.add_argument("--quiet", action="store_true", help="Suppress console telemetry")
+    parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose console telemetry")
 
     return parser.parse_args()
 
@@ -70,10 +70,8 @@ def cli() -> int:
     config = ResearchConfig.load(config_root=args.config_root)
     apply_cli_overrides(config, args)
 
-    runtime = build_runtime(config)
-    if args.quiet:
-        runtime.telemetry._echo_to_console = False
-    else:
+    runtime = build_runtime(config, verbose=args.verbose)
+    if args.verbose:
         print(
             (
                 f"Starting deep research with model={config.model.model_name}, "
@@ -103,11 +101,12 @@ def cli() -> int:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(final_report.markdown_report, encoding="utf-8")
 
-    print(
-        f"Final report generated and saved to: {output_path}",
-        file=sys.stderr,
-        flush=True,
-    )
+    if args.verbose:
+        print(
+            f"Final report generated and saved to: {output_path}",
+            file=sys.stderr,
+            flush=True,
+        )
     print(final_report.executive_answer)
     return 0
 
