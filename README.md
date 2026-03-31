@@ -22,24 +22,30 @@
 
 ### 📦 Installation
 
+#### Option A: Global Install (Recommended for users)
+The easiest way to install DeepResearch is using [pipx](https://github.com/pypa/pipx), which handles the virtual environment for you:
+
+```bash
+pipx install git+https://github.com/yourusername/deepresearch.git
+```
+
+#### Option B: Development Install
+If you want to contribute or modify the source code:
+
 1. **Clone the repository:**
    ```bash
    git clone https://github.com/yourusername/deepresearch.git
    cd deepresearch
    ```
 
-2. **Set up a virtual environment:**
+2. **Set up a virtual environment and install in editable mode:**
    ```bash
    python -m venv .venv
-   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+   source .venv/bin/activate
+   pip install -e ".[dev]"
    ```
 
-3. **Install dependencies:**
-   ```bash
-   pip install -e .
-   ```
-
-4. **Pull the browser image:**
+3. **Pull the browser image:**
    ```bash
    docker pull lightpanda/browser:nightly
    ```

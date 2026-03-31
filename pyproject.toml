@@ -35,6 +35,9 @@ deepresearch = "deepresearch.main:cli"
 [tool.setuptools.packages.find]
 include = ["deepresearch*"]
 
+[tool.setuptools.package-data]
+"deepresearch.resources" = ["*.toml", "**/*.j2"]
+
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]

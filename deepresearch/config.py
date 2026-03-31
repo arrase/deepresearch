@@ -12,6 +12,7 @@ from pathlib import Path
 import shutil
 import tomllib
 import sys
+from importlib import resources
 
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, model_validator
 
@@ -21,8 +22,13 @@ DEFAULT_CONFIG_FILENAME = "config.toml"
 
 
 def default_config_root() -> Path:
-    """Returns the source config directory in the project root."""
-    return Path(__file__).resolve().parent.parent / "config"
+    """Returns the source config directory in the project root or package resources."""
+    # Try to get the path from resources (works in installed environments)
+    try:
+        return Path(str(resources.files("deepresearch.resources")))
+    except (ImportError, TypeError):
+        # Fallback for development if resources are not yet available as a package
+        return Path(__file__).resolve().parent.parent / "config"
 
 
 def resolve_config_root(override: str | Path | None = None) -> Path:
@@ -41,29 +47,39 @@ def resolve_config_root(override: str | Path | None = None) -> Path:
 def bootstrap_config_root(config_root: Path) -> None:
     """Materialize an editable config tree from the project defaults when needed."""
 
-    source_root = default_config_root().resolve()
+    # Get the source root as a Traversable object
+    source_root = resources.files("deepresearch.resources")
+    
     config_root = config_root.resolve()
     config_root.mkdir(parents=True, exist_ok=True)
-    if config_root == source_root:
-        return
-    _copy_default_asset(source_root / DEFAULT_CONFIG_FILENAME, config_root / DEFAULT_CONFIG_FILENAME)
-    _copy_default_tree(source_root / "prompts", config_root / "prompts")
+    
+    # We can't easily compare Traversable to Path for equality if installed as wheel,
+    # but we only bootstrap if config_root doesn't exist or is missing files.
+    
+    _copy_resource_to_path(source_root / DEFAULT_CONFIG_FILENAME, config_root / DEFAULT_CONFIG_FILENAME)
+    _copy_resource_tree(source_root / "prompts", config_root / "prompts")
 
 
-def _copy_default_tree(source: Path, target: Path) -> None:
+def _copy_resource_tree(source: resources.abc.Traversable, target: Path) -> None:
+    """Recursively copy a Traversable resource tree to a physical Path."""
     if source.is_dir():
         target.mkdir(parents=True, exist_ok=True)
         for child in source.iterdir():
-            _copy_default_tree(child, target / child.name)
+            _copy_resource_tree(child, target / child.name)
         return
-    _copy_default_asset(source, target)
+    
+    # It's a file
+    if not target.exists():
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(source.read_bytes())
 
 
-def _copy_default_asset(source: Path, target: Path) -> None:
+def _copy_resource_to_path(source: resources.abc.Traversable, target: Path) -> None:
+    """Copy a single resource file to a physical Path if it doesn't exist."""
     if target.exists():
         return
     target.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(source, target)
+    target.write_bytes(source.read_bytes())
 
 
 class ModelConfig(BaseModel):
