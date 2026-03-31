@@ -17,6 +17,8 @@ dependencies = [
     "langchain-ollama>=0.3.3",
     "langgraph>=0.6.7",
     "pydantic>=2.11.7",
+    "markdown>=3.7",
+    "weasyprint>=64.0",
 ]
 
 [project.optional-dependencies]

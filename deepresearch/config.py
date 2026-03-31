@@ -134,6 +134,7 @@ class DiscordConfig(BaseModel):
 
     token: str | None = Field(default=None)
     user_id: str | None = Field(default=None)
+    output: str = Field(default="pdf", pattern="^(markdown|pdf)$")
 
 
 class RuntimeConfig(BaseModel):

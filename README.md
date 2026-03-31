@@ -6,6 +6,8 @@ The system is optimized for **local LLMs** (via Ollama) and features a robust "m
 
 ## Key Features
 
+- **Multi-format Output**: Generate research reports in both Markdown and professional PDF formats (via WeasyPrint), with custom styling and page numbering.
+- **Discord Integration**: Automatically send research reports to Discord as file attachments (PDF or Markdown).
 - **Stateful Research Loop**: Built with [LangGraph](https://github.com/langchain-ai/langgraph), the system manages the research lifecycle through a series of specialized nodes (Planner, Browser, Extractor, Evaluator, Synthesizer).
 - **Local LLM Support**: Powered by [Ollama](https://ollama.com/), allowing for private and cost-effective research sessions using models like Qwen 2.5 or Llama 3.
 - **Auditable Reports**: Every claim in the final report is linked to an `evidence_id`, which is traced back to a specific source URL and quotation.
@@ -30,6 +32,7 @@ The research process follows a directed graph:
 - **Python**: 3.11 or higher.
 - **Ollama**: Installed and running (for the LLM backend).
 - **Docker**: Installed and running (for the Lightpanda browser).
+- **System Libraries**: `weasyprint` may require additional system dependencies (like `pango`, `cairo`, `gdk-pixbuf`) depending on your OS.
 
 ## Installation
 
@@ -59,11 +62,12 @@ deepresearch "What are the latest developments in fusion energy for 2025?"
 
 ### CLI Options
 
-- `-o, --output <path>`: Path to save the final Markdown report (default: `report.md`).
+- `--markdown <path>`: Path to save the final Markdown report.
+- `--pdf <path>`: Path to save the final PDF report (professionally styled).
 - `--model <name>`: Override the default Ollama model name.
 - `--config-root <path>`: Use a custom configuration directory.
 - `--max-iterations <int>`: Set the maximum number of research cycles.
-- `--discord`: Send the final report to a Discord user via DM (requires configuration).
+- `--discord`: Send the final report to a Discord user via DM as a file attachment. When used, the report is NOT saved to disk unless `--markdown` or `--pdf` are also specified.
 - `-v, --verbose`: Enable detailed console telemetry to follow the research process in real-time.
 
 ## Configuration
@@ -71,7 +75,10 @@ deepresearch "What are the latest developments in fusion energy for 2025?"
 The project uses a TOML-based configuration system. On the first run, it will bootstrap a default configuration in `~/.deepresearch/config`.
 
 - **`config.toml`**: Manage model parameters (temperature, context window), browser settings, and research limits.
-- **`discord` section**: Add your `token` and `user_id` to enable Discord notifications.
+- **`discord` section**: 
+    - `token`: Your Discord bot token.
+    - `user_id`: Your Discord user ID.
+    - `output`: Set to `"pdf"` (default) or `"markdown"` to choose the attachment format.
 - **`prompts/`**: Edit the Jinja2 templates to change how the LLM plans, extracts evidence, or synthesizes the final report.
 
 ## Development
@@ -84,5 +91,6 @@ The project uses a TOML-based configuration system. On the first run, it will bo
   - `state.py`: Typed data models and Pydantic schemas.
   - `subagents/`: Specialized workers (LLM reasoning and deterministic data processing).
   - `context_manager.py`: Context assembly and token budgeting.
+  - `output_utils.py`: PDF generation and other output helpers.
 - `config/`: Default configuration and prompt templates.
 - `tests/`: Comprehensive test suite using Pytest.

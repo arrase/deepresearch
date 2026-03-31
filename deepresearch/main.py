@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 import sys
 
+from .output_utils import generate_pdf
 from .config import ResearchConfig
 from .context_manager import ContextManager
 from .graph import build_graph
@@ -39,7 +40,11 @@ def build_runtime(config: ResearchConfig, verbose: bool = False) -> ResearchRunt
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Auditable deep research with LangGraph, Ollama, and Lightpanda")
     parser.add_argument("query", help="Open-ended research question")
-    parser.add_argument("-o", "--output", help="Path to write the final markdown report", default=None)
+    
+    output_group = parser.add_mutually_exclusive_group()
+    output_group.add_argument("--markdown", help="Path to write the final markdown report")
+    output_group.add_argument("--pdf", help="Path to write the final PDF report")
+    
     parser.add_argument("--config-root", default=None, help="Path to the editable config root")
     parser.add_argument("--model", default=None, help="Ollama model name override")
     parser.add_argument("--num-ctx", type=int, default=None, help="Context window size override")
@@ -91,24 +96,27 @@ def cli() -> int:
         return 2
 
     # File output logic:
-    # 1. If -o/--output is explicitly provided, use it.
-    # 2. If --discord is NOT used, default to "report.md".
-    # 3. If --discord IS used and no -o was provided, skip file writing.
-    output_target = args.output
-    if output_target is None and not args.discord:
-        output_target = "report.md"
-
-    if output_target:
-        output_path = Path(output_target)
+    # 1. If --markdown is explicitly provided, use it.
+    # 2. If --pdf is explicitly provided, use it.
+    # 3. If NEITHER --markdown NOR --pdf is provided AND NOT --discord, default to markdown report.md.
+    # 4. If --discord IS used and no other output is specified, DO NOT write to disk.
+    if args.markdown:
+        output_path = Path(args.markdown)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(final_report.markdown_report, encoding="utf-8")
-
         if args.verbose:
-            print(
-                f"Final report generated and saved to: {output_path}",
-                file=sys.stderr,
-                flush=True,
-            )
+            print(f"Final markdown report generated and saved to: {output_path}", file=sys.stderr, flush=True)
+    elif args.pdf:
+        output_path = Path(args.pdf)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        generate_pdf(final_report.markdown_report, output_path)
+        if args.verbose:
+            print(f"Final PDF report generated and saved to: {output_path}", file=sys.stderr, flush=True)
+    elif not args.discord:
+        output_path = Path("report.md")
+        output_path.write_text(final_report.markdown_report, encoding="utf-8")
+        if args.verbose:
+            print(f"Final markdown report generated and saved to: {output_path}", file=sys.stderr, flush=True)
 
     if args.discord:
         import asyncio

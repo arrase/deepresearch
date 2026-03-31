@@ -10,6 +10,8 @@ Deep Research is an auditable research pipeline designed to transform open-ended
 - **Search Backend**: Supports DuckDuckGo (default) and Tavily.
 - **Prompt Management**: Prompts are stored as [Jinja2](https://jinja.palletsprojects.com/) templates in `config/prompts/`, allowing for easy customization without modifying Python code.
 - **Configuration**: Uses TOML (`config/config.toml`) for managing model settings, context window policies, and runtime limits.
+- **Multi-format Reports**: Supports both Markdown and PDF output formats. PDF reports are styled via WeasyPrint.
+- **Discord Integration**: Reports can be sent directly to Discord as file attachments (PDF/Markdown) via bot DM.
 
 ## Project Structure
 
@@ -19,6 +21,7 @@ Deep Research is an auditable research pipeline designed to transform open-ended
   - `state.py`: Defines the `ResearchState` TypedDict and other data models (Pydantic).
   - `subagents/`: Specialized workers for LLM tasks and deterministic data processing.
   - `context_manager.py`: Manages the assembly of context for LLM prompts.
+  - `output_utils.py`: Centralized logic for PDF generation and multi-format output.
   - `telemetry.py`: Handles console logging.
   - `tools.py`: Search and browser clients.
 - `config/`: Configuration root.
@@ -44,6 +47,7 @@ The research process follows a directed graph:
 - Python 3.11 or higher.
 - [Ollama](https://ollama.com/) installed and running.
 - [Docker](https://www.docker.com/) installed and running (for Lightpanda).
+- WeasyPrint system dependencies (pango, cairo, etc. - OS dependent).
 
 ### Installation
 ```bash
@@ -52,11 +56,17 @@ pip install -e .
 
 ### Running Research
 ```bash
-# Run a basic research session
+# Run a basic research session (defaults to report.md)
 deepresearch "What are the latest developments in fusion energy?"
 
-# Specify an output file
-deepresearch "..." -o my_report.md
+# Generate a markdown report at a specific path
+deepresearch "..." --markdown my_report.md
+
+# Generate a PDF report
+deepresearch "..." --pdf my_report.pdf
+
+# Send to Discord (uses output format from config.toml, defaults to PDF)
+deepresearch "..." --discord
 
 # Run with verbose telemetry
 deepresearch "..." -v

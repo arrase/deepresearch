@@ -11,6 +11,7 @@ import httpx
 
 from ..config import DiscordConfig
 from ..state import FinalReport
+from ..output_utils import generate_pdf
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +44,15 @@ async def send_discord_report(config: DiscordConfig, report: FinalReport) -> boo
         # 2. Prepare the report content
         clean_query = re.sub(r"[^a-zA-Z0-9]", "_", report.query)[:50]
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"report_{clean_query}_{timestamp}.md"
+        
+        if config.output == "pdf":
+            filename = f"report_{clean_query}_{timestamp}.pdf"
+            file_content = generate_pdf(report.markdown_report)
+            content_type = "application/pdf"
+        else:
+            filename = f"report_{clean_query}_{timestamp}.md"
+            file_content = report.markdown_report.encode("utf-8")
+            content_type = "text/markdown"
 
         intro_parts = [
             f"🚀 **Research Report Generated**",
@@ -60,36 +69,20 @@ async def send_discord_report(config: DiscordConfig, report: FinalReport) -> boo
                 intro_parts.append(f"• ... and {len(report.key_findings) - 3} more")
 
         intro_content = "\n".join(intro_parts)
-        report_markdown = report.markdown_report
 
-        # If the report is small enough, send it in a code block
-        if len(report_markdown) < 1800 and len(intro_content) + len(report_markdown) < 1900:
-            payload = {"content": f"{intro_content}\n\n```markdown\n{report_markdown}\n```"}
-            try:
-                resp = await client.post(
-                    f"https://discord.com/api/v10/channels/{channel_id}/messages",
-                    headers=headers,
-                    json=payload,
-                )
-                resp.raise_for_status()
-                return True
-            except Exception as e:
-                logger.error(f"Failed to send Discord message: {e}")
-                return False
-        else:
-            # Send as file
-            try:
-                # Multipart/form-data for files
-                files = {"file": (filename, report_markdown.encode("utf-8"), "text/markdown")}
-                payload_json = json.dumps({"content": intro_content})
-                resp = await client.post(
-                    f"https://discord.com/api/v10/channels/{channel_id}/messages",
-                    headers=headers,
-                    data={"payload_json": payload_json},
-                    files=files,
-                )
-                resp.raise_for_status()
-                return True
-            except Exception as e:
-                logger.error(f"Failed to send Discord file: {e}")
-                return False
+        # Send as file
+        try:
+            # Multipart/form-data for files
+            files = {"file": (filename, file_content, content_type)}
+            payload_json = json.dumps({"content": intro_content})
+            resp = await client.post(
+                f"https://discord.com/api/v10/channels/{channel_id}/messages",
+                headers=headers,
+                data={"payload_json": payload_json},
+                files=files,
+            )
+            resp.raise_for_status()
+            return True
+        except Exception as e:
+            logger.error(f"Failed to send Discord file: {e}")
+            return False
