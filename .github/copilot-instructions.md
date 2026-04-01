@@ -21,11 +21,11 @@ deepresearch "Your research query here"
 
 Use `./.venv/bin/python -m pytest` if the repository virtualenv is active but `pytest` is not on `PATH`.
 
-## Architecture
+## High-level architecture
 
 DeepResearch is a LangGraph-based research pipeline assembled in `deepresearch/main.py` and `deepresearch/graph.py`.
 
-The CLI loads `ResearchConfig`, applies CLI overrides, builds a `ResearchRuntime`, constructs an initial `ResearchState`, then invokes the compiled graph.
+The CLI entrypoint in `deepresearch/main.py` loads `ResearchConfig`, applies CLI overrides, builds a `ResearchRuntime`, creates the initial `ResearchState`, then invokes the compiled graph and writes Markdown, PDF, or Discord output from the resulting `FinalReport`.
 
 `ResearchRuntime` is the dependency container for the graph. It wires together:
 
@@ -44,7 +44,8 @@ Routing is data-driven:
 - `source_manager` either pops the next queued candidate or issues new searches from gaps, search intents, and active subqueries
 - `browser` classifies fetched pages as useful / partial / blocked / empty / error
 - `extractor` only runs for useful or partial pages
-- `evaluator` decides whether research is sufficient, whether to continue sourcing, or whether to re-plan
+- `evaluator` combines deterministic coverage checks with LLM coverage evaluation, then decides whether research is sufficient, whether to continue sourcing, or whether to re-plan
+- `synthesizer` works from a token-budgeted context assembled by `ContextManager`, and the graph can stop early with `final_context_full`, `research_exhausted`, or `max_iterations_reached`
 
 The core design is auditability through structured state, not free-form text passing. `deepresearch/state.py` defines the durable objects that move through the graph:
 
@@ -57,7 +58,7 @@ The core design is auditability through structured state, not free-form text pas
 - `FinalReport`
 - `TelemetryEvent`
 
-Prompting is file-based and user-editable. `ResearchConfig.load()` bootstraps `~/.deepresearch/config/` from packaged defaults, and `PromptTemplateLoader` renders Jinja templates from `<config_root>/prompts`. When changing prompt variables or prompt names, update the templates and the code together.
+Configuration and prompts are local-first and user-editable. `ResearchConfig.load()` bootstraps `~/.deepresearch/config/` from packaged defaults in `deepresearch.resources`, and `PromptTemplateLoader` renders Jinja templates from `<config_root>/prompts` with `StrictUndefined`. When changing prompt names or variables, update both the templates and the code that renders them.
 
 ## Key Conventions
 
@@ -71,8 +72,14 @@ Node execution is instrumented with telemetry through the `record_telemetry` dec
 
 Search and evidence handling are intentionally deterministic outside the LLM boundary. Reuse helpers in `deepresearch/core/utils.py` for URL canonicalization, deduplication, chunking, scoring, coverage checks, and dossier updates before introducing new logic.
 
-Context construction is centralized in `deepresearch/context_manager.py`. Do not hand-roll prompt context inside nodes when an existing context builder can be extended.
+Context construction is centralized in `deepresearch/context_manager.py`. Do not hand-roll prompt context inside nodes when an existing context builder or synthesis budget helper can be extended.
+
+The planner and evaluator are expected to reason over coverage and source diversity, not just raw evidence count. Preserve the coverage summaries and source-balance signals produced by `ContextManager` when changing prompt inputs.
 
 Config and prompts are local-first and editable by the end user. Prefer adding validated config fields in `deepresearch/config.py` and consuming them through `ResearchRuntime` instead of scattering hard-coded runtime defaults.
 
 Tests lean on dependency injection with fake search, browser, and LLM workers (`tests/test_graph_end_to_end.py`). Preserve that seam when refactoring runtime wiring or node behavior.
+
+When changing search, browser, or evidence logic, prefer extending the deterministic helpers and update the focused tests in `tests/test_tools.py`, `tests/test_context_manager.py`, or `tests/test_graph_end_to_end.py` instead of only relying on end-to-end behavior.
+
+The project expects local Ollama plus Docker-backed Lightpanda during real runs, but tests avoid those external dependencies through fakes. Keep that separation intact.
