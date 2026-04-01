@@ -46,3 +46,56 @@ def test_cli_overrides_take_precedence_over_toml_config(tmp_path) -> None:
     assert config.model.model_name == "custom-model"
     assert config.model.num_ctx == 32768
     assert config.runtime.max_iterations == 5
+
+
+def test_loaded_config_uses_runtime_synthesis_budget_settings(tmp_path) -> None:
+    config_root = tmp_path / "config-root"
+    config = ResearchConfig.load(config_root=config_root)
+
+    assert config.runtime.synthesizer_output_reserve_ratio == 0.20
+    assert config.runtime.synthesizer_prompt_margin == 512
+    assert config.runtime.max_stagnation_cycles == 4
+    assert config.runtime.max_consecutive_technical_failures == 3
+    assert config.runtime.max_cycles_without_new_evidence == 3
+    assert config.runtime.max_cycles_without_useful_sources == 4
+    assert config.runtime.min_progress_score_to_reset_stagnation == 2
+
+
+def test_load_ignores_legacy_context_section(tmp_path) -> None:
+    config_root = tmp_path / "legacy-config-root"
+    config = ResearchConfig.load(config_root=config_root)
+    legacy_text = config.config_file_path.read_text(encoding="utf-8")
+    config.config_file_path.write_text(
+        legacy_text.replace(
+            "[browser]",
+            "[context]\n"
+            "evidence_budget_ratio = 0.45\n"
+            "dossier_budget_ratio = 0.30\n"
+            "local_source_budget_ratio = 0.20\n"
+            "safety_margin_ratio = 0.05\n\n"
+            "[browser]",
+        ),
+        encoding="utf-8",
+    )
+
+    reloaded = ResearchConfig.load(config_root=config_root)
+
+    assert reloaded.runtime.synthesizer_output_reserve_ratio == 0.20
+
+
+def test_runtime_progress_thresholds_are_user_editable(tmp_path) -> None:
+    config_root = tmp_path / "custom-runtime-config"
+    config = ResearchConfig.load(config_root=config_root)
+    config_text = config.config_file_path.read_text(encoding="utf-8")
+    config.config_file_path.write_text(
+        config_text.replace("max_stagnation_cycles = 4", "max_stagnation_cycles = 7")
+        .replace("max_consecutive_technical_failures = 3", "max_consecutive_technical_failures = 5")
+        .replace("weight_actionable_gap = 1", "weight_actionable_gap = 2"),
+        encoding="utf-8",
+    )
+
+    reloaded = ResearchConfig.load(config_root=config_root)
+
+    assert reloaded.runtime.weight_actionable_gap == 2
+    assert reloaded.runtime.max_stagnation_cycles == 7
+    assert reloaded.runtime.max_consecutive_technical_failures == 5

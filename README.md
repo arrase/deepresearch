@@ -101,6 +101,46 @@ You can configure the language for the final research report in `config.toml`. B
 language = "Spanish"
 ```
 
+### Research depth, stagnation, and stop conditions
+
+DeepResearch now separates a hard iteration guardrail from real research progress.
+
+- `max_iterations` remains the absolute safety cap.
+- The agent also tracks useful progress such as newly accepted evidence, useful sources, resolved subqueries, and actionable gaps.
+- Planner and evaluator prompts now look at structural coverage too: they infer the type of answer the user is asking for and watch for thin facets or overly concentrated sources.
+- If the system stops making progress for too many cycles, it can stop early with `research_exhausted` instead of wasting all remaining iterations.
+
+The main terminal stop reasons are:
+
+- `sufficient_information`: the evaluator believes the evidence is sufficient.
+- `final_context_full`: the final synthesis step is already at capacity.
+- `research_exhausted`: the system is no longer making useful progress.
+- `max_iterations_reached`: the hard iteration cap was reached.
+
+These thresholds are configurable in `config.toml`:
+
+```toml
+[runtime]
+max_iterations = 10
+max_stagnation_cycles = 4
+max_consecutive_technical_failures = 3
+max_cycles_without_new_evidence = 3
+max_cycles_without_useful_sources = 4
+min_progress_score_to_reset_stagnation = 2
+
+weight_new_evidence = 2
+weight_useful_source = 1
+weight_resolved_subquery = 3
+weight_actionable_gap = 1
+```
+
+Interpretation:
+
+- Higher `max_*` values make the agent more persistent.
+- Lower values make it stop earlier when research quality is not improving.
+- The `weight_*` settings control what counts as meaningful progress during a cycle.
+- Better reports also depend on prompt guidance: the planner should expand under-covered facets, and the evaluator should resist stopping when the evidence is still one-sided.
+
 ### Discord Setup
 To use the `--discord` flag, update `config.toml` with your bot credentials:
 ```toml

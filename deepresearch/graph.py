@@ -23,7 +23,7 @@ def build_graph(runtime: ResearchRuntime):
     graph.add_conditional_edges("browser", _route_after_browser, {"extractor": "extractor", "evaluator": "evaluator", "source_manager": "source_manager"})
     graph.add_edge("extractor", "context_manager")
     graph.add_edge("context_manager", "evaluator")
-    graph.add_conditional_edges("evaluator", lambda s: "synthesizer" if s["is_sufficient"] else ("planner" if not s["active_subqueries"] else "source_manager"), {"synthesizer": "synthesizer", "source_manager": "source_manager", "planner": "planner"})
+    graph.add_conditional_edges("evaluator", _route_after_evaluator, {"synthesizer": "synthesizer", "source_manager": "source_manager", "planner": "planner"})
     graph.add_edge("synthesizer", END)
     return graph.compile()
 
@@ -31,4 +31,12 @@ def _route_after_browser(state: ResearchState) -> str:
     res = state.get("current_browser_result")
     if not res: return "source_manager"
     if res.status in {BrowserPageStatus.USEFUL, BrowserPageStatus.PARTIAL}: return "extractor"
-    return "evaluator" if state["fallback_reason"] else "source_manager"
+    return "evaluator" if state.get("technical_reason") else "source_manager"
+
+
+def _route_after_evaluator(state: ResearchState) -> str:
+    if state["is_sufficient"]:
+        return "synthesizer"
+    if state.get("technical_reason"):
+        return "planner"
+    return "planner" if not state["active_subqueries"] else "source_manager"

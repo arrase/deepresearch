@@ -27,7 +27,7 @@ class ExtractorNode:
         local_source = "\n\n".join(chunks)[:self._runtime.config.browser.max_content_chars]
         
         context = self._runtime.context_manager.extractor_context(state, targets, local_source)
-        payload = self._runtime.llm_workers.extract_evidence(context)
+        payload, usage = self._runtime.llm_workers.extract_evidence_with_usage(context)
         
         latest = [
             AtomicEvidence(
@@ -37,6 +37,7 @@ class ExtractorNode:
                 **item.model_dump()
             ) for item in payload.evidences
         ]
+        llm_usage = {**state.get("llm_usage", {}), "extractor": usage}
         
-        event = self._runtime.telemetry.record("extractor", "Extraction complete", url=browser_res.url, count=len(latest))
-        return {"latest_evidence": latest, "telemetry": [*state["telemetry"], event]}
+        event = self._runtime.telemetry.record("extractor", "Extraction complete", url=browser_res.url, count=len(latest), **usage)
+        return {"latest_evidence": latest, "llm_usage": llm_usage, "telemetry": [*state["telemetry"], event]}

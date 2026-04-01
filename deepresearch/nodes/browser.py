@@ -66,5 +66,6 @@ class BrowserNode:
             "visited_urls": visited,
             "discarded_sources": discarded_sources,
             "current_browser_result": result,
+            "useful_sources_count": state["useful_sources_count"] + (1 if result.status in {BrowserPageStatus.USEFUL, BrowserPageStatus.PARTIAL} else 0),
             "telemetry": [*state["telemetry"], event],
         }

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any, TypeVar
+from typing import Any, NamedTuple, TypeVar
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.output_parsers import PydanticOutputParser
@@ -26,6 +26,11 @@ from ..state import (
 from .utils import build_report_sources
 
 TModel = TypeVar("TModel", bound=BaseModel)
+
+
+class LLMInvocation(NamedTuple):
+    content: str
+    usage: dict[str, int]
 
 
 class PlannerPayload(BaseModel):
@@ -109,7 +114,43 @@ class LLMWorkers:
             kwargs["format"] = "json"
         return ChatOllama(**kwargs)
 
-    def _parse_response(self, prompt_name: str, variables: dict[str, Any], schema: type[TModel], temperature: float) -> TModel:
+    def _extract_usage(self, response: Any) -> dict[str, int]:
+        usage: dict[str, int] = {}
+        candidates = []
+        response_metadata = getattr(response, "response_metadata", None)
+        usage_metadata = getattr(response, "usage_metadata", None)
+        if isinstance(response_metadata, dict):
+            candidates.append(response_metadata.get("token_usage"))
+            candidates.append(response_metadata.get("usage"))
+            candidates.append(response_metadata)
+        if isinstance(usage_metadata, dict):
+            candidates.append(usage_metadata)
+
+        key_map = {
+            "input_tokens": ("input_tokens", "prompt_eval_count", "prompt_tokens"),
+            "output_tokens": ("output_tokens", "eval_count", "completion_tokens"),
+            "total_tokens": ("total_tokens", "total_token_count"),
+        }
+        for output_key, input_keys in key_map.items():
+            for candidate in candidates:
+                if not isinstance(candidate, dict):
+                    continue
+                for input_key in input_keys:
+                    value = candidate.get(input_key)
+                    if isinstance(value, int):
+                        usage[output_key] = value
+                        break
+                if output_key in usage:
+                    break
+        if "total_tokens" not in usage and {"input_tokens", "output_tokens"} <= usage.keys():
+            usage["total_tokens"] = usage["input_tokens"] + usage["output_tokens"]
+        return usage
+
+    def _invoke(self, llm: ChatOllama, messages: list[SystemMessage | HumanMessage]) -> LLMInvocation:
+        response = llm.invoke(messages)
+        return LLMInvocation(content=str(response.content), usage=self._extract_usage(response))
+
+    def _parse_response(self, prompt_name: str, variables: dict[str, Any], schema: type[TModel], temperature: float) -> tuple[TModel, dict[str, int]]:
         parser = PydanticOutputParser(pydantic_object=schema)
         try:
             instructions = self._prompt_loader.render_format(prompt_name, variables)
@@ -126,10 +167,14 @@ class LLMWorkers:
         messages = [SystemMessage(content=prompt_pair.system), HumanMessage(content=prompt_pair.human)]
         
         raw_text = ""
+        usage: dict[str, int] = {}
         try:
-            raw_text = str(llm.invoke(messages).content)
+            invocation = self._invoke(llm, messages)
+            raw_text = invocation.content
+            usage = invocation.usage
             parsed = self._try_parse(parser, raw_text, schema)
-            if parsed: return parsed
+            if parsed:
+                return parsed, usage
         except Exception as e:
             raw_text = f"Error: {str(e)}"
 
@@ -141,9 +186,10 @@ class LLMWorkers:
                 "raw_output": str(raw_text),
                 "parse_error": "Invalid JSON or schema mismatch"
             })
-            retry_raw = llm.invoke([SystemMessage(content=repair_prompt.system), HumanMessage(content=repair_prompt.human)]).content
-            parsed = self._try_parse(parser, str(retry_raw), schema)
-            if parsed: return parsed
+            retry_invocation = self._invoke(llm, [SystemMessage(content=repair_prompt.system), HumanMessage(content=repair_prompt.human)])
+            parsed = self._try_parse(parser, retry_invocation.content, schema)
+            if parsed:
+                return parsed, retry_invocation.usage or usage
         except Exception:
             pass
             
@@ -189,31 +235,66 @@ class LLMWorkers:
             return None
 
     def plan_research(self, context: NodeContext) -> PlannerPayload:
+        payload, _ = self._parse_response("planner", context.model_dump(), PlannerPayload, self._config.model.temperature_planner)
+        return payload
+
+    def plan_research_with_usage(self, context: NodeContext) -> tuple[PlannerPayload, dict[str, int]]:
         return self._parse_response("planner", context.model_dump(), PlannerPayload, self._config.model.temperature_planner)
 
     def extract_evidence(self, context: NodeContext) -> EvidencePayload:
         vars = context.model_dump()
         vars["evidentiary"] = "\n".join(f"- {e.claim} | {e.source_title}" for e in context.evidentiary)
         try:
-            return self._parse_response("extractor", vars, EvidencePayload, self._config.model.temperature_extractor)
+            payload, _ = self._parse_response("extractor", vars, EvidencePayload, self._config.model.temperature_extractor)
+            return payload
         except Exception: return EvidencePayload()
+
+    def extract_evidence_with_usage(self, context: NodeContext) -> tuple[EvidencePayload, dict[str, int]]:
+        vars = context.model_dump()
+        vars["evidentiary"] = "\n".join(f"- {e.claim} | {e.source_title}" for e in context.evidentiary)
+        try:
+            return self._parse_response("extractor", vars, EvidencePayload, self._config.model.temperature_extractor)
+        except Exception:
+            return EvidencePayload(), {}
 
     def evaluate_coverage(self, context: NodeContext) -> CoveragePayload:
         vars = context.model_dump()
-        vars["evidentiary"] = "\n".join(f"- {e.subquery_id}: {e.claim}" for e in context.evidentiary)
+        vars["evidentiary"] = "\n".join(
+            f"- {e.subquery_id}: {e.claim} | source={e.source_title} | domain={re.sub(r'^www\\.', '', e.source_url.split('/')[2])}"
+            for e in context.evidentiary
+        )
         try:
-            return self._parse_response("evaluator", vars, CoveragePayload, self._config.model.temperature_evaluator)
+            payload, _ = self._parse_response("evaluator", vars, CoveragePayload, self._config.model.temperature_evaluator)
+            return payload
         except Exception: return CoveragePayload()
 
+    def evaluate_coverage_with_usage(self, context: NodeContext) -> tuple[CoveragePayload, dict[str, int]]:
+        vars = context.model_dump()
+        vars["evidentiary"] = "\n".join(
+            f"- {e.subquery_id}: {e.claim} | source={e.source_title} | domain={re.sub(r'^www\\.', '', e.source_url.split('/')[2])}"
+            for e in context.evidentiary
+        )
+        try:
+            return self._parse_response("evaluator", vars, CoveragePayload, self._config.model.temperature_evaluator)
+        except Exception:
+            return CoveragePayload(), {}
+
     def synthesize_report(self, context: NodeContext, query: str) -> FinalReport:
+        report, _ = self.synthesize_report_with_usage(context, query)
+        return report
+
+    def synthesize_report_with_usage(self, context: NodeContext, query: str) -> tuple[FinalReport, dict[str, int]]:
         vars = context.model_dump()
         vars.update({"query": query, "evidentiary": "\n".join(f"- {e.id}: {e.claim}" for e in context.evidentiary)})
         
         prompt = self._prompt_loader.render("synthesizer", {**vars, "language": self._config.runtime.language, "format_instructions": ""})
         llm = self._llm(temperature=self._config.model.temperature_synthesizer, json_format=False)
+        usage: dict[str, int] = {}
         
         try:
-            raw_text = str(llm.invoke([SystemMessage(content=prompt.system), HumanMessage(content=prompt.human)]).content)
+            invocation = self._invoke(llm, [SystemMessage(content=prompt.system), HumanMessage(content=prompt.human)])
+            raw_text = invocation.content
+            usage = invocation.usage
         except Exception as e:
             raw_text = f"# Research Report\n\nError generating report: {str(e)}"
             
@@ -233,4 +314,4 @@ class LLMWorkers:
             query=query, executive_answer="See report.",
             cited_sources=cited_sources, evidence_ids=[e.id for e in context.evidentiary],
             markdown_report=md
-        )
+        ), usage

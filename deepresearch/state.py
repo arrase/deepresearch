@@ -197,6 +197,12 @@ class FinalReport(BaseModel):
     markdown_report: str = ""
     markdown_artifact_path: str | None = None
     stop_reason: str | None = None
+    context_window_tokens: int | None = None
+    reserved_output_tokens: int | None = None
+    prompt_tokens: int | None = None
+    evidence_tokens: int | None = None
+    available_prompt_tokens: int | None = None
+    llm_usage: dict[str, int] = Field(default_factory=dict)
     generated_at: str = Field(default_factory=utc_now_iso)
 
 
@@ -225,8 +231,17 @@ class ResearchState(TypedDict):
     hypotheses: list[str]
     iteration: int
     max_iterations: int
+    stagnation_cycles: int
+    consecutive_technical_failures: int
+    cycles_without_new_evidence: int
+    cycles_without_useful_sources: int
+    progress_score: int
+    useful_sources_count: int
     telemetry: list[TelemetryEvent]
-    fallback_reason: str | None
+    stop_reason: str | None
+    technical_reason: str | None
+    llm_usage: NotRequired[dict[str, dict[str, int]]]
+    synthesis_budget: NotRequired[dict[str, int | bool | str | None]]
     current_candidate: NotRequired[SearchCandidate | None]
     current_browser_result: NotRequired[SourceVisit | None]
     latest_evidence: NotRequired[list[AtomicEvidence]]
@@ -255,8 +270,17 @@ def build_initial_state(
         "hypotheses": [],
         "iteration": 0,
         "max_iterations": max_iterations,
+        "stagnation_cycles": 0,
+        "consecutive_technical_failures": 0,
+        "cycles_without_new_evidence": 0,
+        "cycles_without_useful_sources": 0,
+        "progress_score": 0,
+        "useful_sources_count": 0,
         "telemetry": [],
-        "fallback_reason": None,
+        "stop_reason": None,
+        "technical_reason": None,
+        "llm_usage": {},
+        "synthesis_budget": {},
         "current_candidate": None,
         "current_browser_result": None,
         "latest_evidence": [],

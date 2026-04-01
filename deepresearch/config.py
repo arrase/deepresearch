@@ -95,17 +95,6 @@ class ModelConfig(BaseModel):
     timeout_seconds: int = Field(default=120, ge=5)
 
 
-class ContextPolicyConfig(BaseModel):
-    """Global context budget and deterministic selection policy."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    evidence_budget_ratio: float = Field(default=0.45, gt=0.0, lt=1.0)
-    dossier_budget_ratio: float = Field(default=0.30, gt=0.0, lt=1.0)
-    local_source_budget_ratio: float = Field(default=0.20, gt=0.0, lt=1.0)
-    safety_margin_ratio: float = Field(default=0.05, ge=0.0, lt=0.5)
-
-
 class BrowserConfig(BaseModel):
     """Runtime settings for the Docker-managed Lightpanda browser."""
 
@@ -157,6 +146,17 @@ class RuntimeConfig(BaseModel):
     max_iterations: int = Field(default=8, ge=1)
     llm_retry_attempts: int = Field(default=2, ge=0, le=5)
     language: str = Field(default="English")
+    synthesizer_output_reserve_ratio: float = Field(default=0.20, ge=0.05, lt=0.8)
+    synthesizer_prompt_margin: int = Field(default=512, ge=0)
+    max_stagnation_cycles: int = Field(default=4, ge=1)
+    max_consecutive_technical_failures: int = Field(default=3, ge=1)
+    max_cycles_without_new_evidence: int = Field(default=3, ge=1)
+    max_cycles_without_useful_sources: int = Field(default=4, ge=1)
+    min_progress_score_to_reset_stagnation: int = Field(default=2, ge=1)
+    weight_new_evidence: int = Field(default=2, ge=0)
+    weight_useful_source: int = Field(default=1, ge=0)
+    weight_resolved_subquery: int = Field(default=3, ge=0)
+    weight_actionable_gap: int = Field(default=1, ge=0)
 
 
 class ResearchConfig(BaseModel):
@@ -165,7 +165,6 @@ class ResearchConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     model: ModelConfig = Field(default_factory=ModelConfig)
-    context: ContextPolicyConfig = Field(default_factory=ContextPolicyConfig)
     browser: BrowserConfig = Field(default_factory=BrowserConfig)
     search: SearchConfig = Field(default_factory=SearchConfig)
     discord: DiscordConfig = Field(default_factory=DiscordConfig)
@@ -183,6 +182,7 @@ class ResearchConfig(BaseModel):
             bootstrap_config_root(resolved_root)
 
         raw_payload = tomllib.loads(config_file_path.read_text(encoding="utf-8"))
+        raw_payload.pop("context", None)
         config = cls.model_validate(raw_payload)
         config._config_root = resolved_root
         config._config_file_path = config_file_path

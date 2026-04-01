@@ -1,5 +1,11 @@
 Primary question: {{ query }}
 
+Coverage Snapshot:
+{{ coverage_summary }}
+
+Source Balance Snapshot:
+{{ source_balance_summary }}
+
 {{ dossier_context }}Active subqueries:
 {{ active_subqueries }}
 Resolved subqueries:
@@ -10,4 +16,4 @@ Open gaps:
 Evidence:
 {{ evidentiary }}
 
-Task: Evaluate coverage, contradictions, and sufficiency. Use the progress summary to identify missing nuances or unaddressed facets. Generate detailed open gaps if certain subqueries require deeper investigation.
+Task: Evaluate coverage, contradictions, and sufficiency. First infer the answer shape demanded by the user question, then check whether the evidence actually covers the necessary facets for that shape. Use the coverage and source-balance snapshots to detect empty facets, thin subqueries, single-source concentration, or one-sided support. Generate detailed open gaps whenever deeper investigation is still needed.

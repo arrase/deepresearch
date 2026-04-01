@@ -42,5 +42,9 @@ class ContextManagerNode:
             "working_dossier": dossier,
             "discarded_sources": discarded,
             "latest_evidence": accepted,
+            "progress_score": (
+                len(accepted) * self._runtime.config.runtime.weight_new_evidence
+                + (1 if browser_result and browser_result.status.value in {"useful", "partial"} else 0) * self._runtime.config.runtime.weight_useful_source
+            ),
             "telemetry": [*state["telemetry"], event],
         }

@@ -16,7 +16,16 @@ class SourceManagerNode:
         if state["search_queue"]:
             next_c = state["search_queue"][0]
             event = self._runtime.telemetry.record("source_manager", "Queue next", url=next_c.url)
-            return {"search_queue": state["search_queue"][1:], "current_candidate": next_c, "iteration": state["iteration"] + 1, "telemetry": [*state["telemetry"], event]}
+            return {
+                "search_queue": state["search_queue"][1:],
+                "current_candidate": next_c,
+                "current_browser_result": None,
+                "latest_evidence": [],
+                "progress_score": 0,
+                "iteration": state["iteration"] + 1,
+                "technical_reason": None,
+                "telemetry": [*state["telemetry"], event],
+            }
 
         # Collect queries: Gaps > Intents > Subqueries
         queries = [q for g in reversed(state["open_gaps"]) for q in g.suggested_queries]
@@ -26,7 +35,15 @@ class SourceManagerNode:
 
         if not queries:
             event = self._runtime.telemetry.record("source_manager", "No queries left")
-            return {"iteration": state["iteration"] + 1, "fallback_reason": "no_queries", "telemetry": [*state["telemetry"], event]}
+            return {
+                "iteration": state["iteration"] + 1,
+                "current_candidate": None,
+                "current_browser_result": None,
+                "latest_evidence": [],
+                "progress_score": 0,
+                "technical_reason": "no_queries",
+                "telemetry": [*state["telemetry"], event],
+            }
 
         raw = []
         for q in queries:
@@ -34,7 +51,15 @@ class SourceManagerNode:
                 raw.extend(self._runtime.search_client.search(q))
             except Exception as e:
                 event = self._runtime.telemetry.record("source_manager", "Search error", q=q, err=str(e))
-                return {"completed_search_queries": [*state["completed_search_queries"], q], "telemetry": [*state["telemetry"], event], "fallback_reason": "search_error"}
+                return {
+                    "completed_search_queries": [*state["completed_search_queries"], q],
+                    "current_candidate": None,
+                    "current_browser_result": None,
+                    "latest_evidence": [],
+                    "progress_score": 0,
+                    "telemetry": [*state["telemetry"], event],
+                    "technical_reason": "search_error",
+                }
 
         deduped, discarded = deduplicate_candidates(raw, state["visited_urls"])
         new_discarded = state["discarded_sources"] + [DiscardedSource(url=u, reason=r, note=n) for u, r, n in discarded]
@@ -44,8 +69,29 @@ class SourceManagerNode:
 
         if not ranked:
             event = self._runtime.telemetry.record("source_manager", "No results")
-            return {"completed_search_queries": [*state["completed_search_queries"], *queries], "discarded_sources": new_discarded, "iteration": state["iteration"] + 1, "fallback_reason": "no_results", "telemetry": [*state["telemetry"], event]}
+            return {
+                "completed_search_queries": [*state["completed_search_queries"], *queries],
+                "discarded_sources": new_discarded,
+                "current_candidate": None,
+                "current_browser_result": None,
+                "latest_evidence": [],
+                "progress_score": 0,
+                "iteration": state["iteration"] + 1,
+                "technical_reason": "no_results",
+                "telemetry": [*state["telemetry"], event],
+            }
 
         next_c = ranked[0]
         event = self._runtime.telemetry.record("source_manager", "Discovered", url=next_c.url, count=len(ranked))
-        return {"completed_search_queries": [*state["completed_search_queries"], *queries], "discarded_sources": new_discarded, "search_queue": ranked[1:], "current_candidate": next_c, "iteration": state["iteration"] + 1, "telemetry": [*state["telemetry"], event]}
+        return {
+            "completed_search_queries": [*state["completed_search_queries"], *queries],
+            "discarded_sources": new_discarded,
+            "search_queue": ranked[1:],
+            "current_candidate": next_c,
+            "current_browser_result": None,
+            "latest_evidence": [],
+            "progress_score": 0,
+            "iteration": state["iteration"] + 1,
+            "technical_reason": None,
+            "telemetry": [*state["telemetry"], event],
+        }

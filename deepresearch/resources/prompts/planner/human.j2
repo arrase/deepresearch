@@ -8,6 +8,12 @@ Task: Decompose the question into concrete subqueries, working hypotheses, and i
 Current Progress:
 {{ dossier_context }}
 
+Coverage Snapshot:
+{{ coverage_summary }}
+
+Source Balance Snapshot:
+{{ source_balance_summary }}
+
 Active subqueries:
 {{ active_subqueries }}
 
@@ -21,6 +27,11 @@ Task: Review the current progress and open gaps. You may add new subqueries to t
 {% endif %}
 
 Write every generated field in the SAME language as the primary question, including subquery text, rationale, search terms, search intents, and hypotheses.
+
+Reasoning policy:
+- First infer what kind of answer the user is asking for (for example: explanation, comparison, recommendation, chronology, current-state snapshot, process, profile, risk assessment, or another open-ended structure implied by the question).
+- Then make sure the agenda covers the core facets needed for that answer shape instead of over-focusing on a single angle, source family, or entity.
+- Use the coverage and source-balance snapshots to notice empty facets, thin subqueries, and one-sided evidence before proposing more searches.
 
 Ambiguity Mapping:
 If the primary question is vague or has multiple interpretations, generate subqueries that map these different facets (e.g., economic, technical, social impact) to ensure a comprehensive research agenda.

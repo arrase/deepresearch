@@ -9,12 +9,6 @@ num_ctx = 150000
 num_predict = 8192
 timeout_seconds = 120
 
-[context]
-evidence_budget_ratio = 0.45
-dossier_budget_ratio = 0.30
-local_source_budget_ratio = 0.20
-safety_margin_ratio = 0.05
-
 [browser]
 image = "lightpanda/browser:nightly"
 disable_telemetry = true
@@ -42,3 +36,14 @@ output = "pdf"
 max_iterations = 10
 llm_retry_attempts = 2
 language = "English"
+synthesizer_output_reserve_ratio = 0.20
+synthesizer_prompt_margin = 512
+max_stagnation_cycles = 4
+max_consecutive_technical_failures = 3
+max_cycles_without_new_evidence = 3
+max_cycles_without_useful_sources = 4
+min_progress_score_to_reset_stagnation = 2
+weight_new_evidence = 2
+weight_useful_source = 1
+weight_resolved_subquery = 3
+weight_actionable_gap = 1

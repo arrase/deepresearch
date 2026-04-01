@@ -50,6 +50,10 @@ def estimate_tokens(text: str) -> int:
     return max(1, len(text) // 4)
 
 
+def total_evidence_tokens(evidence: Iterable[AtomicEvidence]) -> int:
+    return sum(estimate_tokens(it.claim + it.summary + it.quotation) for it in evidence)
+
+
 def stable_evidence_key(source_url: str, claim: str, quotation: str) -> str:
     return sha1(f"{source_url}|{claim}|{quotation}".encode()).hexdigest()[:16]
 
