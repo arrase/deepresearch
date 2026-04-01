@@ -3,9 +3,11 @@ from __future__ import annotations
 import argparse
 import sys
 
+import pytest
 from deepresearch.config import ResearchConfig
 from deepresearch.main import apply_cli_overrides, parse_args
 from deepresearch.prompting import PromptTemplateLoader
+from pydantic import ValidationError
 
 
 def test_load_bootstraps_project_style_config_root(tmp_path) -> None:
@@ -64,12 +66,12 @@ def test_loaded_config_uses_runtime_synthesis_budget_settings(tmp_path) -> None:
     assert config.runtime.min_progress_score_to_reset_stagnation == 2
 
 
-def test_load_ignores_legacy_context_section(tmp_path) -> None:
-    config_root = tmp_path / "legacy-config-root"
+def test_load_rejects_unknown_root_sections(tmp_path) -> None:
+    config_root = tmp_path / "invalid-config-root"
     config = ResearchConfig.load(config_root=config_root)
-    legacy_text = config.config_file_path.read_text(encoding="utf-8")
+    config_text = config.config_file_path.read_text(encoding="utf-8")
     config.config_file_path.write_text(
-        legacy_text.replace(
+        config_text.replace(
             "[browser]",
             "[context]\n"
             "evidence_budget_ratio = 0.45\n"
@@ -81,9 +83,8 @@ def test_load_ignores_legacy_context_section(tmp_path) -> None:
         encoding="utf-8",
     )
 
-    reloaded = ResearchConfig.load(config_root=config_root)
-
-    assert reloaded.runtime.synthesizer_output_reserve_ratio == 0.20
+    with pytest.raises(ValidationError):
+        ResearchConfig.load(config_root=config_root)
 
 
 def test_runtime_progress_thresholds_are_user_editable(tmp_path) -> None:
@@ -93,15 +94,29 @@ def test_runtime_progress_thresholds_are_user_editable(tmp_path) -> None:
     config.config_file_path.write_text(
         config_text.replace("max_stagnation_cycles = 4", "max_stagnation_cycles = 7")
         .replace("max_consecutive_technical_failures = 3", "max_consecutive_technical_failures = 5")
-        .replace("weight_actionable_gap = 1", "weight_actionable_gap = 2"),
+        .replace("weight_resolved_subquery = 3", "weight_resolved_subquery = 6"),
         encoding="utf-8",
     )
 
     reloaded = ResearchConfig.load(config_root=config_root)
 
-    assert reloaded.runtime.weight_actionable_gap == 2
     assert reloaded.runtime.max_stagnation_cycles == 7
     assert reloaded.runtime.max_consecutive_technical_failures == 5
+    assert reloaded.runtime.weight_resolved_subquery == 6
+
+
+def test_load_rejects_unknown_runtime_fields(tmp_path) -> None:
+    config_root = tmp_path / "invalid-runtime-config"
+    config = ResearchConfig.load(config_root=config_root)
+    config_text = config.config_file_path.read_text(encoding="utf-8")
+    config.config_file_path.write_text(
+        config_text.replace("weight_resolved_subquery = 3", "weight_resolved_subquery = 4")
+        + "\nweight_actionable_gap = 99\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValidationError):
+        ResearchConfig.load(config_root=config_root)
 
 
 def test_runtime_default_verbosity_is_zero(tmp_path) -> None:

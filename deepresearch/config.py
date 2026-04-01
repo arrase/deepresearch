@@ -157,7 +157,6 @@ class RuntimeConfig(BaseModel):
     weight_new_evidence: int = Field(default=2, ge=0)
     weight_useful_source: int = Field(default=1, ge=0)
     weight_resolved_subquery: int = Field(default=3, ge=0)
-    weight_actionable_gap: int = Field(default=1, ge=0)
 
 
 class ResearchConfig(BaseModel):
@@ -183,7 +182,6 @@ class ResearchConfig(BaseModel):
             bootstrap_config_root(resolved_root)
 
         raw_payload = tomllib.loads(config_file_path.read_text(encoding="utf-8"))
-        raw_payload.pop("context", None)
         config = cls.model_validate(raw_payload)
         config._config_root = resolved_root
         config._config_file_path = config_file_path

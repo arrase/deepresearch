@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..core.utils import select_relevant_chunks, split_text, summarize_evidence
+from ..core.utils import rank_subqueries_for_source, select_relevant_chunks, split_text, summarize_evidence
 from ..state import AtomicEvidence, BrowserPageStatus, ResearchState
 from .base import consume_llm_telemetry_events, record_telemetry
 
@@ -20,7 +20,24 @@ class ExtractorNode:
         if not (browser_res and candidate) or browser_res.status not in {BrowserPageStatus.USEFUL, BrowserPageStatus.PARTIAL}:
             return {"latest_evidence": []}
 
-        targets = candidate.subquery_ids or [state["active_subqueries"][0].id]
+        source_text = "\n".join(
+            part
+            for part in [
+                candidate.title,
+                candidate.snippet,
+                browser_res.title,
+                browser_res.excerpt,
+                browser_res.content[:4000],
+            ]
+            if part
+        )
+        targets = rank_subqueries_for_source(
+            state["active_subqueries"],
+            text=source_text,
+            candidate_subquery_ids=candidate.subquery_ids or browser_res.candidate_subquery_ids,
+        )
+        if not targets:
+            return {"latest_evidence": []}
         terms = [t for sq in state["active_subqueries"] if sq.id in targets for t in (sq.search_terms or [sq.question])]
         
         chunks = select_relevant_chunks(split_text(browser_res.content), terms, 10)

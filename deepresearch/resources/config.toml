@@ -47,4 +47,3 @@ min_progress_score_to_reset_stagnation = 2
 weight_new_evidence = 2
 weight_useful_source = 1
 weight_resolved_subquery = 3
-weight_actionable_gap = 1

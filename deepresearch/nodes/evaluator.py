@@ -18,12 +18,10 @@ class EvaluatorNode:
         state: ResearchState,
         *,
         newly_resolved_count: int,
-        actionable_gap_count: int,
     ) -> dict[str, int]:
         runtime = self._runtime.config.runtime
         progress_score = state.get("progress_score", 0)
         progress_score += newly_resolved_count * runtime.weight_resolved_subquery
-        progress_score += actionable_gap_count * runtime.weight_actionable_gap
 
         evidence_count = len(state.get("latest_evidence", []))
         useful_source_seen = bool(state.get("current_browser_result") and state["current_browser_result"].status.value in {"useful", "partial"})
@@ -60,12 +58,10 @@ class EvaluatorNode:
         open_gaps = list({(g.subquery_id, g.description): g for g in [*d_gaps, *semantic.open_gaps]}.values())
         
         synthesis_budget = self._runtime.context_manager.synthesis_budget(state)
-        actionable_gap_count = sum(1 for gap in open_gaps if gap.actionable)
         newly_resolved_count = max(0, len(resolved) - len(state["resolved_subqueries"]))
         progress = self._compute_progress_counters(
             state,
             newly_resolved_count=newly_resolved_count,
-            actionable_gap_count=actionable_gap_count,
         )
         stop_reason = state.get("stop_reason")
         if stop_reason is None and synthesis_budget.get("final_context_full"):

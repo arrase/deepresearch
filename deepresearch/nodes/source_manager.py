@@ -11,9 +11,38 @@ class SourceManagerNode:
     def __init__(self, runtime: Any) -> None:
         self._runtime = runtime
 
+    def _build_query_specs(self, state: ResearchState) -> list[dict[str, object]]:
+        query_specs: dict[str, dict[str, object]] = {}
+
+        def register_query(query: str, subquery_ids: list[str], discovered_via: str) -> None:
+            if not query.strip() or query in state["completed_search_queries"]:
+                return
+            spec = query_specs.get(query)
+            if spec is None:
+                query_specs[query] = {
+                    "query": query,
+                    "subquery_ids": list(dict.fromkeys(subquery_ids)),
+                    "discovered_via": discovered_via,
+                }
+                return
+            spec["subquery_ids"] = list(dict.fromkeys([*spec["subquery_ids"], *subquery_ids]))
+
+        for gap in reversed(state["open_gaps"]):
+            for query in gap.suggested_queries:
+                register_query(query, [gap.subquery_id], "gap")
+        for intent in reversed(state["search_intents"]):
+            register_query(intent.query, intent.subquery_ids, "intent")
+        for subquery in reversed(state["active_subqueries"]):
+            register_query(subquery.question, [subquery.id], "subquery")
+
+        return list(query_specs.values())
+
     @record_telemetry("source_manager", "Managing: {query}")
     def __call__(self, state: ResearchState) -> dict:
-        if state["search_queue"]:
+        query_specs = self._build_query_specs(state)
+        gap_query_specs = [spec for spec in query_specs if spec["discovered_via"] == "gap"]
+
+        if state["search_queue"] and not gap_query_specs:
             next_c = state["search_queue"][0]
             event = self._runtime.telemetry.record("source_manager", "Queue next", verbosity=1, payload_type="queue", url=next_c.url)
             detail_event = self._runtime.telemetry.record(
@@ -35,13 +64,10 @@ class SourceManagerNode:
                 "telemetry": self._runtime.telemetry.extend(state["telemetry"], event, detail_event),
             }
 
-        # Collect queries: Gaps > Intents > Subqueries
-        queries = [q for g in reversed(state["open_gaps"]) for q in g.suggested_queries]
-        queries += [i.query for i in reversed(state["search_intents"])]
-        queries += [s.question for s in reversed(state["active_subqueries"])]
-        queries = [q for q in queries if q not in state["completed_search_queries"]][:self._runtime.config.search.max_queries_per_cycle]
+        selected_specs = (gap_query_specs or query_specs)[:self._runtime.config.search.max_queries_per_cycle]
+        queries = [str(spec["query"]) for spec in selected_specs]
 
-        if not queries:
+        if not selected_specs:
             event = self._runtime.telemetry.record("source_manager", "No queries left", verbosity=1, payload_type="queue")
             detail_event = self._runtime.telemetry.record(
                 "source_manager",
@@ -62,13 +88,20 @@ class SourceManagerNode:
             }
 
         raw = []
-        for q in queries:
+        for spec in selected_specs:
+            query = str(spec["query"])
+            subquery_ids = list(spec["subquery_ids"])
             try:
-                raw.extend(self._runtime.search_client.search(q))
+                results = self._runtime.search_client.search(query)
+                for candidate in results:
+                    candidate.subquery_ids = list(dict.fromkeys([*candidate.subquery_ids, *subquery_ids]))
+                    if candidate.discovered_via == "search":
+                        candidate.discovered_via = str(spec["discovered_via"])
+                raw.extend(results)
             except Exception as e:
-                event = self._runtime.telemetry.record("source_manager", "Search error", verbosity=1, payload_type="error", q=q, err=str(e))
+                event = self._runtime.telemetry.record("source_manager", "Search error", verbosity=1, payload_type="error", q=query, err=str(e))
                 return {
-                    "completed_search_queries": [*state["completed_search_queries"], q],
+                    "completed_search_queries": [*state["completed_search_queries"], query],
                     "current_candidate": None,
                     "current_browser_result": None,
                     "latest_evidence": [],
@@ -77,7 +110,8 @@ class SourceManagerNode:
                     "technical_reason": "search_error",
                 }
 
-        deduped, discarded = deduplicate_candidates(raw, state["visited_urls"])
+        candidate_pool = [*raw, *state["search_queue"]]
+        deduped, discarded = deduplicate_candidates(candidate_pool, state["visited_urls"])
         new_discarded = state["discarded_sources"] + [DiscardedSource(url=u, reason=r, note=n) for u, r, n in discarded]
 
         domains = Counter(c.domain for c in state["search_queue"])

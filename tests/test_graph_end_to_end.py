@@ -3,11 +3,15 @@ from deepresearch.context_manager import ContextManager
 from deepresearch.graph import build_graph
 from deepresearch.nodes import ResearchRuntime
 from deepresearch.core.llm import PlannerPayload, EvidencePayload, EvidenceDraft, CoveragePayload
+from deepresearch.nodes.evaluator import EvaluatorNode
+from deepresearch.nodes.extractor import ExtractorNode
+from deepresearch.nodes.source_manager import SourceManagerNode
 from deepresearch.state import (
     BrowserPageStatus,
     SourceVisit,
     ConfidenceLevel,
     FinalReport,
+    Gap,
     SearchCandidate,
     SearchIntent,
     Subquery,
@@ -49,6 +53,22 @@ class FailIfCalledBrowser:
 class EmptySearchClient:
     def search(self, query: str, *, max_results: int | None = None):
         return []
+
+
+class RecordingSearchClient:
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+
+    def search(self, query: str, *, max_results: int | None = None):
+        self.calls.append(query)
+        return [
+            SearchCandidate(
+                url="https://example.com/playwright-guide",
+                title="Playwright guide",
+                snippet="Playwright testing framework from Microsoft",
+                domain="example.com",
+            )
+        ]
 
 
 class FakeLLMWorkers:
@@ -288,4 +308,96 @@ def test_graph_verbosity_three_includes_dossier_and_web_debug_events() -> None:
 
     assert any(event.payload_type == "web_page" and "page" in event.payload for event in result["telemetry"])
     assert any(event.payload_type == "dossier_snapshot" for event in result["telemetry"])
+
+
+def test_source_manager_prioritizes_gap_queries_over_existing_queue() -> None:
+    config = ResearchConfig()
+    search_client = RecordingSearchClient()
+    runtime = ResearchRuntime(
+        config=config,
+        context_manager=ContextManager(config),
+        llm_workers=FakeLLMWorkers(),
+        browser=FakeBrowser(),
+        search_client=search_client,
+        telemetry=TelemetryRecorder(),
+    )
+    node = SourceManagerNode(runtime)
+    state = build_initial_state("Lightpanda vs Playwright", max_iterations=4)
+    state["active_subqueries"] = [
+        Subquery(id="sq_1", question="What is Lightpanda?", rationale="r", search_terms=["lightpanda"]),
+        Subquery(id="sq_2", question="What is Playwright?", rationale="r", search_terms=["playwright"]),
+    ]
+    state["search_queue"] = [
+        SearchCandidate(url="https://example.com/old", title="Old queue item", domain="example.com", subquery_ids=["sq_1"])
+    ]
+    state["open_gaps"] = [
+        Gap(subquery_id="sq_2", description="Need Playwright docs", suggested_queries=["playwright framework docs"])
+    ]
+
+    result = node(state)
+
+    assert search_client.calls == ["playwright framework docs"]
+    assert result["current_candidate"].url == "https://example.com/playwright-guide"
+    assert result["current_candidate"].subquery_ids == ["sq_2"]
+    assert any(candidate.url == "https://example.com/old" for candidate in result["search_queue"])
+
+
+def test_extractor_assigns_evidence_to_candidate_subquery_not_first_active() -> None:
+    config = ResearchConfig()
+    runtime = ResearchRuntime(
+        config=config,
+        context_manager=ContextManager(config),
+        llm_workers=FakeLLMWorkers(),
+        browser=FakeBrowser(),
+        search_client=FakeSearchClient(),
+        telemetry=TelemetryRecorder(),
+    )
+    node = ExtractorNode(runtime)
+    state = build_initial_state("Lightpanda vs Playwright", max_iterations=4)
+    state["active_subqueries"] = [
+        Subquery(id="sq_1", question="What is Lightpanda?", rationale="r", search_terms=["lightpanda framework"]),
+        Subquery(id="sq_2", question="What is Playwright?", rationale="r", search_terms=["playwright testing framework"]),
+    ]
+    state["current_candidate"] = SearchCandidate(
+        url="https://example.com/playwright-guide",
+        title="Playwright guide",
+        snippet="Playwright testing framework from Microsoft",
+        domain="example.com",
+        subquery_ids=["sq_2"],
+    )
+    state["current_browser_result"] = SourceVisit(
+        url="https://example.com/playwright-guide",
+        final_url="https://example.com/playwright-guide",
+        status=BrowserPageStatus.USEFUL,
+        title="Playwright guide",
+        content="Playwright is a testing framework maintained by Microsoft.",
+        excerpt="Playwright is a testing framework maintained by Microsoft.",
+    )
+
+    result = node(state)
+
+    assert result["latest_evidence"]
+    assert result["latest_evidence"][0].subquery_id == "sq_2"
+
+
+def test_evaluator_counts_zero_evidence_cycle_as_stagnation() -> None:
+    config = ResearchConfig()
+    runtime = ResearchRuntime(
+        config=config,
+        context_manager=ContextManager(config),
+        llm_workers=FakeLLMWorkers(),
+        browser=FakeBrowser(),
+        search_client=FakeSearchClient(),
+        telemetry=TelemetryRecorder(),
+    )
+    node = EvaluatorNode(runtime)
+    state = build_initial_state("Lightpanda vs Playwright", max_iterations=4)
+    state["progress_score"] = config.runtime.weight_useful_source
+    state["stagnation_cycles"] = 1
+    state["latest_evidence"] = []
+
+    progress = node._compute_progress_counters(state, newly_resolved_count=0)
+
+    assert progress["progress_score"] == config.runtime.weight_useful_source
+    assert progress["stagnation_cycles"] == 2
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import Counter
 from hashlib import sha1
+import re
 from typing import Iterable
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
@@ -100,9 +101,62 @@ def deduplicate_candidates(candidates: Iterable[SearchCandidate], visited_urls: 
         url = canonicalize_url(c.url)
         c.url, c.domain = url, extract_domain(url)
         if url in visited_urls: discarded.append((url, SourceDiscardReason.ALREADY_VISITED, "Already visited"))
-        elif url in unique: discarded.append((url, SourceDiscardReason.DUPLICATE_URL, "Duplicate"))
-        else: unique[url] = c
+        elif url in unique:
+            existing = unique[url]
+            existing.subquery_ids = list(dict.fromkeys([*existing.subquery_ids, *c.subquery_ids]))
+            existing.reasons = list(dict.fromkeys([*existing.reasons, *c.reasons]))
+            if len(c.snippet) > len(existing.snippet):
+                existing.snippet = c.snippet
+            if not existing.title and c.title:
+                existing.title = c.title
+            existing.score = max(existing.score, c.score)
+        else:
+            unique[url] = c
     return list(unique.values()), discarded
+
+
+def rank_subqueries_for_source(
+    active_subqueries: list[Subquery],
+    *,
+    text: str,
+    candidate_subquery_ids: Iterable[str] | None = None,
+    limit: int = 3,
+) -> list[str]:
+    lowered = text.lower()
+    text_tokens = set(re.findall(r"[a-z0-9_]+", lowered))
+    allowed_ids = set(candidate_subquery_ids or [])
+    ranked: list[tuple[int, int, str]] = []
+
+    for subquery in active_subqueries:
+        if allowed_ids and subquery.id not in allowed_ids:
+            continue
+
+        score = 0
+        for term in (subquery.search_terms or [subquery.question])[:6]:
+            normalized = term.strip().lower()
+            if normalized and normalized in lowered:
+                score += 2 if " " in normalized else 1
+                continue
+            term_tokens = {token for token in re.findall(r"[a-z0-9_]+", normalized) if len(token) > 2}
+            score += len(term_tokens & text_tokens)
+        question = subquery.question.strip().lower()
+        if question and question in lowered:
+            score += 2
+        else:
+            question_tokens = {token for token in re.findall(r"[a-z0-9_]+", question) if len(token) > 2}
+            score += len(question_tokens & text_tokens)
+
+        if score > 0 or (allowed_ids and subquery.id in allowed_ids):
+            ranked.append((score, subquery.priority, subquery.id))
+
+    if ranked:
+        ranked.sort(key=lambda item: (-item[0], item[1], item[2]))
+        return [subquery_id for _, _, subquery_id in ranked[:limit]]
+
+    if allowed_ids:
+        return [subquery.id for subquery in active_subqueries if subquery.id in allowed_ids][:limit]
+
+    return []
 
 
 def classify_browser_payload(*, content: str, error: str | None, exit_code: int | None, min_partial_chars: int, min_useful_chars: int) -> BrowserPageStatus:
