@@ -10,6 +10,13 @@ from ..state import ResearchState
 F = TypeVar("F", bound=Callable[..., Any])
 
 
+def consume_llm_telemetry_events(runtime: Any) -> list[Any]:
+    consumer = getattr(runtime.llm_workers, "consume_telemetry_events", None)
+    if callable(consumer):
+        return consumer()
+    return []
+
+
 def record_telemetry(stage: str, message_template: str) -> Callable[[F], F]:
     """Decorator to record telemetry events for a node.
     
@@ -29,26 +36,34 @@ def record_telemetry(stage: str, message_template: str) -> Callable[[F], F]:
             start_event = self._runtime.telemetry.record(
                 stage,
                 message,
+                verbosity=1,
+                payload_type="lifecycle",
                 **kwargs.get("telemetry_payload", {}),
             )
             
             # Update state with telemetry
-            state_with_telemetry = {**state, "telemetry": [*state.get("telemetry", []), start_event]}
+            state_with_telemetry = {
+                **state,
+                "telemetry": self._runtime.telemetry.extend(state.get("telemetry", []), start_event),
+            }
             
             try:
                 # Execute the node logic
                 result = func(self, state_with_telemetry, *args, **kwargs)
                 return result
             except Exception as e:
+                llm_events = consume_llm_telemetry_events(self._runtime)
                 # Record error event
                 error_event = self._runtime.telemetry.record(
                     stage,
                     f"Error in {stage}: {str(e)}",
-                    error=True,
+                    verbosity=1,
+                    payload_type="error",
+                    error=str(e),
                 )
                 return {
                     **state_with_telemetry,
-                    "telemetry": [*state_with_telemetry["telemetry"], error_event],
+                    "telemetry": self._runtime.telemetry.extend(state_with_telemetry["telemetry"], *llm_events, error_event),
                 }
         return wrapper  # type: ignore
     return decorator

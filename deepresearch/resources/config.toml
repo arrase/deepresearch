@@ -34,6 +34,7 @@ output = "pdf"
 
 [runtime]
 max_iterations = 10
+verbosity = 0
 llm_retry_attempts = 2
 language = "English"
 synthesizer_output_reserve_ratio = 0.20

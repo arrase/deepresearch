@@ -7,7 +7,7 @@ from collections import Counter, defaultdict
 from pydantic import BaseModel, Field
 from .config import ResearchConfig
 from .state import AtomicEvidence, Gap, ResearchState, Subquery
-from .core.utils import estimate_tokens, extract_domain, select_evidence_for_context, total_evidence_tokens
+from .core.utils import estimate_tokens, extract_domain, select_evidence_for_context, summarize_gaps, total_evidence_tokens
 from .prompting import PromptTemplateLoader
 
 class NodeContext(BaseModel):
@@ -202,3 +202,31 @@ class ContextManager:
         )
         dossier = self._build_synthesizer_dossier(state)
         return NodeContext(query=state["query"], dossier_context=dossier, evidentiary=evidence)
+
+    def debug_state_snapshot(self, state: ResearchState, *, limit: int = 5) -> dict[str, object]:
+        dossier = state["working_dossier"]
+        return {
+            "coverage_summary": self._render_coverage_summary(state),
+            "source_balance_summary": self._render_source_balance_summary(state),
+            "open_gaps": summarize_gaps(state["open_gaps"], limit=limit),
+            "working_dossier": {
+                "subquery_summaries": [
+                    {"subquery_id": sid, "summary": summary}
+                    for sid, summary in list(dossier.subquery_summaries.items())[:limit]
+                ],
+                "key_points": dossier.key_points[:limit],
+                "source_summaries": [
+                    {"url": url, "summary": summary}
+                    for url, summary in list(dossier.source_summaries.items())[:limit]
+                ],
+                "updated_at": dossier.updated_at,
+            },
+            "counts": {
+                "active_subqueries": len(state["active_subqueries"]),
+                "resolved_subqueries": len(state["resolved_subqueries"]),
+                "accepted_evidence": len(state["atomic_evidence"]),
+                "visited_urls": len(state["visited_urls"]),
+                "discarded_sources": len(state["discarded_sources"]),
+                "useful_sources_count": state["useful_sources_count"],
+            },
+        }

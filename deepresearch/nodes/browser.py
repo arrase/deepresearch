@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..core.utils import summarize_source_visit
 from ..state import BrowserPageStatus, DiscardedSource, ResearchState, SourceDiscardReason, SourceVisit
 from .base import record_telemetry
 
@@ -24,10 +25,12 @@ class BrowserNode:
             event = self._runtime.telemetry.record(
                 "browser",
                 "Skipping navigation because there is no current candidate",
+                verbosity=1,
+                payload_type="web_page",
             )
             return {
                 "current_browser_result": result,
-                "telemetry": [*state["telemetry"], event],
+                "telemetry": self._runtime.telemetry.extend(state["telemetry"], event),
             }
 
         result = self._runtime.browser.fetch(candidate.url)
@@ -59,13 +62,22 @@ class BrowserNode:
         event = self._runtime.telemetry.record(
             "browser",
             "Navigation completed",
+            verbosity=1,
+            payload_type="web_page",
             url=candidate.url,
             status=result.status.value,
+        )
+        detail_event = self._runtime.telemetry.record(
+            "browser",
+            "Processed web page",
+            verbosity=3,
+            payload_type="web_page",
+            page=summarize_source_visit(result, include_content_preview=True),
         )
         return {
             "visited_urls": visited,
             "discarded_sources": discarded_sources,
             "current_browser_result": result,
             "useful_sources_count": state["useful_sources_count"] + (1 if result.status in {BrowserPageStatus.USEFUL, BrowserPageStatus.PARTIAL} else 0),
-            "telemetry": [*state["telemetry"], event],
+            "telemetry": self._runtime.telemetry.extend(state["telemetry"], event, detail_event),
         }

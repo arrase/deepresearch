@@ -144,6 +144,7 @@ class RuntimeConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     max_iterations: int = Field(default=8, ge=1)
+    verbosity: int = Field(default=0, ge=0, le=3)
     llm_retry_attempts: int = Field(default=2, ge=0, le=5)
     language: str = Field(default="English")
     synthesizer_output_reserve_ratio: float = Field(default=0.20, ge=0.05, lt=0.8)

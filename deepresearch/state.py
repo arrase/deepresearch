@@ -210,6 +210,8 @@ class TelemetryEvent(BaseModel):
     timestamp: str = Field(default_factory=utc_now_iso)
     stage: str
     message: str
+    verbosity: int = Field(default=1, ge=0, le=3)
+    payload_type: str = "generic"
     payload: dict[str, Any] = Field(default_factory=dict)
 
 

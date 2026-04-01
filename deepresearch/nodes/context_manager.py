@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..core.utils import deduplicate_evidence, update_working_dossier
+from ..core.utils import deduplicate_evidence, summarize_evidence, update_working_dossier
 from ..state import DiscardedSource, ResearchState, SourceDiscardReason
 from .base import record_telemetry
 
@@ -36,7 +36,22 @@ class ContextManagerNode:
                 note="No evidence extracted from this source"
             ))
 
-        event = self._runtime.telemetry.record("context_manager", "Dossier updated", count=len(accepted))
+        updated_state = {
+            **state,
+            "atomic_evidence": updated_evidence,
+            "working_dossier": dossier,
+            "discarded_sources": discarded,
+        }
+        event = self._runtime.telemetry.record("context_manager", "Dossier updated", verbosity=1, payload_type="dossier", count=len(accepted))
+        detail_event = self._runtime.telemetry.record(
+            "context_manager",
+            "Integrated accepted evidence into dossier",
+            verbosity=3,
+            payload_type="dossier_snapshot",
+            accepted_evidence=summarize_evidence(accepted),
+            rejected_count=max(0, len(latest) - len(accepted)),
+            snapshot=self._runtime.context_manager.debug_state_snapshot(updated_state),
+        )
         return {
             "atomic_evidence": updated_evidence,
             "working_dossier": dossier,
@@ -46,5 +61,5 @@ class ContextManagerNode:
                 len(accepted) * self._runtime.config.runtime.weight_new_evidence
                 + (1 if browser_result and browser_result.status.value in {"useful", "partial"} else 0) * self._runtime.config.runtime.weight_useful_source
             ),
-            "telemetry": [*state["telemetry"], event],
+            "telemetry": self._runtime.telemetry.extend(state["telemetry"], event, detail_event),
         }

@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..core.utils import select_relevant_chunks, split_text
+from ..core.utils import select_relevant_chunks, split_text, summarize_evidence
 from ..state import AtomicEvidence, BrowserPageStatus, ResearchState
-from .base import record_telemetry
+from .base import consume_llm_telemetry_events, record_telemetry
 
 
 class ExtractorNode:
@@ -28,6 +28,7 @@ class ExtractorNode:
         
         context = self._runtime.context_manager.extractor_context(state, targets, local_source)
         payload, usage = self._runtime.llm_workers.extract_evidence_with_usage(context)
+        llm_events = consume_llm_telemetry_events(self._runtime)
         
         latest = [
             AtomicEvidence(
@@ -39,5 +40,18 @@ class ExtractorNode:
         ]
         llm_usage = {**state.get("llm_usage", {}), "extractor": usage}
         
-        event = self._runtime.telemetry.record("extractor", "Extraction complete", url=browser_res.url, count=len(latest), **usage)
-        return {"latest_evidence": latest, "llm_usage": llm_usage, "telemetry": [*state["telemetry"], event]}
+        event = self._runtime.telemetry.record("extractor", "Extraction complete", verbosity=1, payload_type="decision", url=browser_res.url, count=len(latest), **usage)
+        detail_event = self._runtime.telemetry.record(
+            "extractor",
+            "Processed page chunks and extracted evidence",
+            verbosity=3,
+            payload_type="web_extraction",
+            target_subquery_ids=targets,
+            selected_chunks=[{"index": index, "preview": chunk} for index, chunk in enumerate(chunks[:6], start=1)],
+            extracted_evidence=summarize_evidence(latest),
+        )
+        return {
+            "latest_evidence": latest,
+            "llm_usage": llm_usage,
+            "telemetry": self._runtime.telemetry.extend(state["telemetry"], *llm_events, event, detail_event),
+        }

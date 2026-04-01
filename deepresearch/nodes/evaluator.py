@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..core.utils import compute_minimum_coverage
+from ..core.utils import compute_minimum_coverage, summarize_gaps
 from ..state import ResearchState
-from .base import record_telemetry
+from .base import consume_llm_telemetry_events, record_telemetry
 
 
 class EvaluatorNode:
@@ -46,6 +46,7 @@ class EvaluatorNode:
     def __call__(self, state: ResearchState) -> dict:
         d_resolved_ids, d_gaps = compute_minimum_coverage(state["active_subqueries"], state["atomic_evidence"])
         semantic, usage = self._runtime.llm_workers.evaluate_coverage_with_usage(self._runtime.context_manager.evaluator_context(state))
+        llm_events = consume_llm_telemetry_events(self._runtime)
         
         resolved_ids = set(d_resolved_ids) | {sid for sid in semantic.resolved_subquery_ids if any(e.subquery_id == sid for e in state["atomic_evidence"])}
         
@@ -84,6 +85,8 @@ class EvaluatorNode:
         event = self._runtime.telemetry.record(
             "evaluator",
             "Evaluated",
+            verbosity=1,
+            payload_type="decision",
             resolved=len(resolved),
             active=len(active),
             sufficient=is_sufficient,
@@ -99,6 +102,30 @@ class EvaluatorNode:
             **{k: v for k, v in synthesis_budget.items() if isinstance(v, (int, bool))},
             **usage,
         )
+        detail_event = self._runtime.telemetry.record(
+            "evaluator",
+            "Coverage decision details",
+            verbosity=2,
+            payload_type="llm_decision",
+            deterministic_resolved_ids=d_resolved_ids,
+            semantic_resolved_ids=semantic.resolved_subquery_ids,
+            combined_resolved_ids=sorted(resolved_ids),
+            semantic_rationale=semantic.rationale,
+            open_gaps=summarize_gaps(open_gaps),
+            contradictions=[item.model_dump(mode="json") for item in semantic.contradictions[:5]],
+        )
+        dossier_event = self._runtime.telemetry.record(
+            "evaluator",
+            "Coverage snapshot after evaluation",
+            verbosity=3,
+            payload_type="dossier_snapshot",
+            snapshot=self._runtime.context_manager.debug_state_snapshot({
+                **state,
+                "active_subqueries": active,
+                "resolved_subqueries": resolved,
+                "open_gaps": open_gaps,
+            }),
+        )
         return {
             "active_subqueries": active, "resolved_subqueries": resolved, "open_gaps": open_gaps,
             "contradictions": semantic.contradictions, "is_sufficient": is_sufficient,
@@ -108,5 +135,6 @@ class EvaluatorNode:
             "consecutive_technical_failures": progress["consecutive_technical_failures"],
             "cycles_without_new_evidence": progress["cycles_without_new_evidence"],
             "cycles_without_useful_sources": progress["cycles_without_useful_sources"],
-            "synthesis_budget": synthesis_budget, "telemetry": [*state["telemetry"], event]
+            "synthesis_budget": synthesis_budget,
+            "telemetry": self._runtime.telemetry.extend(state["telemetry"], *llm_events, event, detail_event, dossier_event),
         }

@@ -18,10 +18,9 @@ from .telemetry import TelemetryRecorder
 from .tools import DuckDuckGoSearchClient, LightpandaDockerManager, TavilySearchClient
 
 
-def build_runtime(config: ResearchConfig, verbose: bool = False) -> ResearchRuntime:
-    telemetry = TelemetryRecorder(
-        echo_to_console=verbose,
-    )
+def build_runtime(config: ResearchConfig, verbosity: int | None = None) -> ResearchRuntime:
+    active_verbosity = config.runtime.verbosity if verbosity is None else verbosity
+    telemetry = TelemetryRecorder(verbosity=active_verbosity)
     if config.search.backend == "tavily":
         search_client = TavilySearchClient(config.search)
     else:
@@ -30,7 +29,7 @@ def build_runtime(config: ResearchConfig, verbose: bool = False) -> ResearchRunt
     return ResearchRuntime(
         config=config,
         context_manager=ContextManager(config),
-        llm_workers=LLMWorkers(config),
+        llm_workers=LLMWorkers(config, telemetry=telemetry),
         browser=LightpandaDockerManager(config.browser),
         search_client=search_client,
         telemetry=telemetry,
@@ -49,8 +48,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model", default=None, help="Ollama model name override")
     parser.add_argument("--num-ctx", type=int, default=None, help="Context window size override")
     parser.add_argument("--max-iterations", type=int, default=None, help="Max research iterations override")
+    parser.add_argument(
+        "--verbosity",
+        dest="verbosity",
+        type=int,
+        choices=range(0, 4),
+        default=None,
+        help="Debug verbosity level: 0 disables telemetry, 1 keeps current progress logs, 2 adds LLM orchestration outputs, 3 adds dossier snapshots and per-web processing details",
+    )
     parser.add_argument("--discord", action="store_true", help="Send the final report to Discord")
-    parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose console telemetry")
 
     return parser.parse_args()
 
@@ -62,6 +68,8 @@ def apply_cli_overrides(config: ResearchConfig, args: argparse.Namespace) -> Non
         config.model.num_ctx = args.num_ctx
     if args.max_iterations is not None:
         config.runtime.max_iterations = args.max_iterations
+    if getattr(args, "verbosity", None) is not None:
+        config.runtime.verbosity = args.verbosity
 
 
 def cli() -> int:
@@ -69,13 +77,13 @@ def cli() -> int:
     config = ResearchConfig.load(config_root=args.config_root)
     apply_cli_overrides(config, args)
 
-    runtime = build_runtime(config, verbose=args.verbose)
-    if args.verbose:
+    runtime = build_runtime(config)
+    if config.runtime.verbosity >= 1:
         print(
             (
                 f"Starting deep research with model={config.model.model_name}, "
                 f"num_ctx={config.model.num_ctx}, max_iterations={config.runtime.max_iterations}, "
-                f"config_root={config.config_root}"
+                f"verbosity={config.runtime.verbosity}, config_root={config.config_root}"
             ),
             file=sys.stderr,
             flush=True,
@@ -102,18 +110,18 @@ def cli() -> int:
         output_path = Path(args.markdown)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(final_report.markdown_report, encoding="utf-8")
-        if args.verbose:
+        if config.runtime.verbosity >= 1:
             print(f"Final markdown report generated and saved to: {output_path}", file=sys.stderr, flush=True)
     elif args.pdf:
         output_path = Path(args.pdf)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         generate_pdf(final_report.markdown_report, output_path)
-        if args.verbose:
+        if config.runtime.verbosity >= 1:
             print(f"Final PDF report generated and saved to: {output_path}", file=sys.stderr, flush=True)
     elif not args.discord:
         output_path = Path("report.md")
         output_path.write_text(final_report.markdown_report, encoding="utf-8")
-        if args.verbose:
+        if config.runtime.verbosity >= 1:
             print(f"Final markdown report generated and saved to: {output_path}", file=sys.stderr, flush=True)
 
     if args.discord:

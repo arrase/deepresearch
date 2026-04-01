@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import argparse
+import sys
 
 from deepresearch.config import ResearchConfig
-from deepresearch.main import apply_cli_overrides
+from deepresearch.main import apply_cli_overrides, parse_args
 from deepresearch.prompting import PromptTemplateLoader
 
 
@@ -39,6 +40,7 @@ def test_cli_overrides_take_precedence_over_toml_config(tmp_path) -> None:
         model="custom-model",
         num_ctx=32768,
         max_iterations=5,
+        verbosity=3,
     )
 
     apply_cli_overrides(config, args)
@@ -46,6 +48,7 @@ def test_cli_overrides_take_precedence_over_toml_config(tmp_path) -> None:
     assert config.model.model_name == "custom-model"
     assert config.model.num_ctx == 32768
     assert config.runtime.max_iterations == 5
+    assert config.runtime.verbosity == 3
 
 
 def test_loaded_config_uses_runtime_synthesis_budget_settings(tmp_path) -> None:
@@ -99,3 +102,18 @@ def test_runtime_progress_thresholds_are_user_editable(tmp_path) -> None:
     assert reloaded.runtime.weight_actionable_gap == 2
     assert reloaded.runtime.max_stagnation_cycles == 7
     assert reloaded.runtime.max_consecutive_technical_failures == 5
+
+
+def test_runtime_default_verbosity_is_zero(tmp_path) -> None:
+    config = ResearchConfig.load(config_root=tmp_path / "config-root")
+
+    assert config.runtime.verbosity == 0
+
+
+def test_parse_args_accepts_verbosity(monkeypatch) -> None:
+    monkeypatch.setattr(sys, "argv", ["deepresearch", "What is Lightpanda?", "--verbosity", "3"])
+
+    args = parse_args()
+
+    assert args.query == "What is Lightpanda?"
+    assert args.verbosity == 3

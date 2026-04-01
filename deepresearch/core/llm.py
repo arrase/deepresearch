@@ -21,9 +21,11 @@ from ..state import (
     Gap, 
     SearchIntent, 
     Subquery,
+    TelemetryEvent,
     coerce_bool
 )
-from .utils import build_report_sources
+from ..telemetry import TelemetryRecorder
+from .utils import build_report_sources, estimate_tokens
 
 TModel = TypeVar("TModel", bound=BaseModel)
 
@@ -96,9 +98,37 @@ class CoveragePayload(BaseModel):
 
 
 class LLMWorkers:
-    def __init__(self, config: ResearchConfig) -> None:
+    def __init__(self, config: ResearchConfig, telemetry: TelemetryRecorder | None = None) -> None:
         self._config = config
+        self._telemetry = telemetry
+        self._pending_telemetry: list[TelemetryEvent] = []
         self._prompt_loader = PromptTemplateLoader(config.prompts_dir, strict_templates=True)
+
+    def consume_telemetry_events(self) -> list[TelemetryEvent]:
+        pending = self._pending_telemetry
+        self._pending_telemetry = []
+        return pending
+
+    def _record_debug_event(
+        self,
+        stage: str,
+        message: str,
+        *,
+        verbosity: int = 2,
+        payload_type: str = "llm_response",
+        **payload: Any,
+    ) -> None:
+        if self._telemetry is None:
+            return
+        event = self._telemetry.record(
+            stage,
+            message,
+            verbosity=verbosity,
+            payload_type=payload_type,
+            **payload,
+        )
+        if event is not None:
+            self._pending_telemetry.append(event)
 
     def _llm(self, temperature: float, json_format: bool = True) -> ChatOllama:
         kwargs = {
@@ -165,33 +195,89 @@ class LLMWorkers:
         
         llm = self._llm(temperature=temperature)
         messages = [SystemMessage(content=prompt_pair.system), HumanMessage(content=prompt_pair.human)]
+        prompt_tokens = estimate_tokens(prompt_pair.system) + estimate_tokens(prompt_pair.human)
         
         raw_text = ""
         usage: dict[str, int] = {}
+        parse_error = "Invalid JSON or schema mismatch"
         try:
             invocation = self._invoke(llm, messages)
             raw_text = invocation.content
             usage = invocation.usage
             parsed = self._try_parse(parser, raw_text, schema)
             if parsed:
+                self._record_debug_event(
+                    prompt_name,
+                    "LLM response parsed",
+                    worker=prompt_name,
+                    temperature=temperature,
+                    prompt_tokens=prompt_tokens,
+                    usage=usage,
+                    raw_output=raw_text,
+                    parsed_output=parsed.model_dump(mode="json"),
+                    repair_attempted=False,
+                )
                 return parsed, usage
         except Exception as e:
+            parse_error = str(e)
             raw_text = f"Error: {str(e)}"
 
+        self._record_debug_event(
+            prompt_name,
+            "LLM response requires repair",
+            payload_type="llm_repair",
+            worker=prompt_name,
+            temperature=temperature,
+            prompt_tokens=prompt_tokens,
+            usage=usage,
+            raw_output=raw_text,
+            parse_error=parse_error,
+        )
+
         # Repair attempt
+        repair_error = None
+        repair_raw_text = ""
+        repair_usage: dict[str, int] = {}
         try:
             repair_prompt = self._prompt_loader.render("repair", {
                 "format_instructions": instructions,
                 "original_prompt": f"SYSTEM: {prompt_pair.system}\nHUMAN: {prompt_pair.human}",
                 "raw_output": str(raw_text),
-                "parse_error": "Invalid JSON or schema mismatch"
+                "parse_error": parse_error
             })
             retry_invocation = self._invoke(llm, [SystemMessage(content=repair_prompt.system), HumanMessage(content=repair_prompt.human)])
-            parsed = self._try_parse(parser, retry_invocation.content, schema)
+            repair_raw_text = retry_invocation.content
+            repair_usage = retry_invocation.usage or usage
+            parsed = self._try_parse(parser, repair_raw_text, schema)
             if parsed:
-                return parsed, retry_invocation.usage or usage
-        except Exception:
-            pass
+                self._record_debug_event(
+                    prompt_name,
+                    "LLM repair parsed",
+                    worker=prompt_name,
+                    temperature=temperature,
+                    prompt_tokens=prompt_tokens,
+                    usage=repair_usage,
+                    raw_output=repair_raw_text,
+                    parsed_output=parsed.model_dump(mode="json"),
+                    repair_attempted=True,
+                    parse_error=parse_error,
+                )
+                return parsed, repair_usage
+        except Exception as exc:
+            repair_error = str(exc)
+
+        self._record_debug_event(
+            prompt_name,
+            "LLM repair failed",
+            payload_type="llm_repair",
+            worker=prompt_name,
+            temperature=temperature,
+            prompt_tokens=prompt_tokens,
+            usage=repair_usage or usage,
+            raw_output=repair_raw_text or raw_text,
+            parse_error=parse_error,
+            repair_error=repair_error,
+        )
             
         raise ValueError(f"Failed to parse {prompt_name} response after repair attempt. Raw: {raw_text[:200]}...")
 

@@ -251,3 +251,41 @@ def test_graph_stops_when_research_is_exhausted_without_progress() -> None:
     assert result["final_report"].stop_reason == "research_exhausted"
     assert result["stagnation_cycles"] >= 2
     assert result["cycles_without_new_evidence"] < 10
+
+
+def test_graph_verbosity_zero_suppresses_telemetry_output() -> None:
+    config = ResearchConfig()
+    config.runtime.verbosity = 0
+    runtime = ResearchRuntime(
+        config=config,
+        context_manager=ContextManager(config),
+        llm_workers=FakeLLMWorkers(),
+        browser=FakeBrowser(),
+        search_client=FakeSearchClient(),
+        telemetry=TelemetryRecorder(verbosity=0),
+    )
+    graph = build_graph(runtime)
+
+    result = graph.invoke(build_initial_state("What is happening to fusion demand?", max_iterations=4))
+
+    assert result["telemetry"] == []
+
+
+def test_graph_verbosity_three_includes_dossier_and_web_debug_events() -> None:
+    config = ResearchConfig()
+    config.runtime.verbosity = 3
+    runtime = ResearchRuntime(
+        config=config,
+        context_manager=ContextManager(config),
+        llm_workers=FakeLLMWorkers(),
+        browser=FakeBrowser(),
+        search_client=FakeSearchClient(),
+        telemetry=TelemetryRecorder(verbosity=3),
+    )
+    graph = build_graph(runtime)
+
+    result = graph.invoke(build_initial_state("What is happening to fusion demand?", max_iterations=4))
+
+    assert any(event.payload_type == "web_page" and "page" in event.payload for event in result["telemetry"])
+    assert any(event.payload_type == "dossier_snapshot" for event in result["telemetry"])
+

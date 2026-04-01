@@ -6,7 +6,7 @@ from typing import Any
 
 from ..state import ResearchState, FinalReport, ConfidenceLevel
 from ..core.utils import build_report_sources
-from .base import record_telemetry
+from .base import consume_llm_telemetry_events, record_telemetry
 
 
 class SynthesizerNode:
@@ -31,6 +31,7 @@ class SynthesizerNode:
                 evidence_ids=[e.id for e in state["atomic_evidence"]],
                 cited_sources=build_report_sources(state["atomic_evidence"])
             )
+        llm_events = consume_llm_telemetry_events(self._runtime)
 
         report.stop_reason = state.get("stop_reason") or ("sufficient_information" if state.get("is_sufficient") else None)
         report.context_window_tokens = int(synthesis_budget.get("context_window_tokens")) if synthesis_budget.get("context_window_tokens") is not None else None
@@ -41,5 +42,17 @@ class SynthesizerNode:
         report.llm_usage = usage
         llm_usage = {**state.get("llm_usage", {}), "synthesizer": usage}
 
-        event = self._runtime.telemetry.record("synthesizer", "Report generated", sources=len(report.cited_sources), stop_reason=report.stop_reason, **usage)
-        return {"final_report": report, "llm_usage": llm_usage, "telemetry": [*state["telemetry"], event]}
+        event = self._runtime.telemetry.record("synthesizer", "Report generated", verbosity=1, payload_type="decision", sources=len(report.cited_sources), stop_reason=report.stop_reason, **usage)
+        detail_event = self._runtime.telemetry.record(
+            "synthesizer",
+            "Synthesis budget applied",
+            verbosity=3,
+            payload_type="dossier_snapshot",
+            synthesis_budget={k: v for k, v in synthesis_budget.items() if isinstance(v, (int, bool, str))},
+            cited_sources=[source.model_dump(mode="json") for source in report.cited_sources[:5]],
+        )
+        return {
+            "final_report": report,
+            "llm_usage": llm_usage,
+            "telemetry": self._runtime.telemetry.extend(state["telemetry"], *llm_events, event, detail_event),
+        }
