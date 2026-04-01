@@ -239,6 +239,7 @@ class ResearchState(TypedDict):
     cycles_without_useful_sources: int
     progress_score: int
     useful_sources_count: int
+    urls_visited_since_eval: int
     telemetry: list[TelemetryEvent]
     stop_reason: str | None
     technical_reason: str | None
@@ -278,6 +279,7 @@ def build_initial_state(
         "cycles_without_useful_sources": 0,
         "progress_score": 0,
         "useful_sources_count": 0,
+        "urls_visited_since_eval": 0,
         "telemetry": [],
         "stop_reason": None,
         "technical_reason": None,

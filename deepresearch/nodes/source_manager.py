@@ -3,7 +3,14 @@
 from __future__ import annotations
 from collections import Counter
 from typing import Any
-from ..core.utils import deduplicate_candidates, score_candidate, summarize_gaps, summarize_search_candidates
+from ..core.utils import (
+    deduplicate_candidates,
+    prune_queue_by_domain,
+    reformulate_queries,
+    score_candidate,
+    summarize_gaps,
+    summarize_search_candidates,
+)
 from ..state import DiscardedSource, ResearchState
 from .base import record_telemetry
 
@@ -35,7 +42,36 @@ class SourceManagerNode:
         for subquery in reversed(state["active_subqueries"]):
             register_query(subquery.question, [subquery.id], "subquery")
 
+        # Reformulate queries for subqueries with zero evidence after stagnation
+        if state["cycles_without_new_evidence"] >= 2:
+            completed = set(state["completed_search_queries"]) | set(query_specs.keys())
+            evidence_by_sq = Counter(e.subquery_id for e in state["atomic_evidence"])
+            for sq in state["active_subqueries"]:
+                if evidence_by_sq[sq.id] == 0 and sq.search_terms:
+                    for variant in reformulate_queries(state["query"], completed, sq.search_terms):
+                        register_query(variant, [sq.id], "gap")
+                        completed.add(variant)
+
         return list(query_specs.values())
+
+    def _prune_and_cap_queue(self, state: ResearchState, queue: list) -> tuple[list, list[DiscardedSource]]:
+        """Prune over-represented domains and cap queue size."""
+        pruned_queue, pruned_entries = prune_queue_by_domain(
+            queue, state["atomic_evidence"]
+        )
+        max_size = self._runtime.config.search.max_queue_size
+        extra_discarded: list[DiscardedSource] = []
+        for url, reason, note in pruned_entries:
+            extra_discarded.append(DiscardedSource(url=url, reason=reason, note=note))
+        if len(pruned_queue) > max_size:
+            for c in pruned_queue[max_size:]:
+                extra_discarded.append(DiscardedSource(
+                    url=c.url,
+                    reason="low_value",
+                    note="Queue cap exceeded",
+                ))
+            pruned_queue = pruned_queue[:max_size]
+        return pruned_queue, extra_discarded
 
     @record_telemetry("source_manager", "Managing: {query}")
     def __call__(self, state: ResearchState) -> dict:
@@ -43,26 +79,31 @@ class SourceManagerNode:
         gap_query_specs = [spec for spec in query_specs if spec["discovered_via"] == "gap"]
 
         if state["search_queue"] and not gap_query_specs:
-            next_c = state["search_queue"][0]
-            event = self._runtime.telemetry.record("source_manager", "Queue next", verbosity=1, payload_type="queue", url=next_c.url)
-            detail_event = self._runtime.telemetry.record(
-                "source_manager",
-                "Selected queued candidate",
-                verbosity=3,
-                payload_type="web_candidates",
-                candidate=summarize_search_candidates([next_c], limit=1),
-                remaining_queue=len(state["search_queue"]) - 1,
-            )
-            return {
-                "search_queue": state["search_queue"][1:],
-                "current_candidate": next_c,
-                "current_browser_result": None,
-                "latest_evidence": [],
-                "progress_score": 0,
-                "iteration": state["iteration"] + 1,
-                "technical_reason": None,
-                "telemetry": self._runtime.telemetry.extend(state["telemetry"], event, detail_event),
-            }
+            queue, extra_discarded = self._prune_and_cap_queue(state, state["search_queue"])
+            if not queue:
+                gap_query_specs = []  # fall through to search below
+            else:
+                next_c = queue[0]
+                event = self._runtime.telemetry.record("source_manager", "Queue next", verbosity=1, payload_type="queue", url=next_c.url)
+                detail_event = self._runtime.telemetry.record(
+                    "source_manager",
+                    "Selected queued candidate",
+                    verbosity=3,
+                    payload_type="web_candidates",
+                    candidate=summarize_search_candidates([next_c], limit=1),
+                    remaining_queue=len(queue) - 1,
+                )
+                return {
+                    "search_queue": queue[1:],
+                    "discarded_sources": state["discarded_sources"] + extra_discarded,
+                    "current_candidate": next_c,
+                    "current_browser_result": None,
+                    "latest_evidence": [],
+                    "progress_score": 0,
+                    "iteration": state["iteration"] + 1,
+                    "technical_reason": None,
+                    "telemetry": self._runtime.telemetry.extend(state["telemetry"], event, detail_event),
+                }
 
         selected_specs = (gap_query_specs or query_specs)[:self._runtime.config.search.max_queries_per_cycle]
         queries = [str(spec["query"]) for spec in selected_specs]
@@ -87,12 +128,19 @@ class SourceManagerNode:
                 "telemetry": self._runtime.telemetry.extend(state["telemetry"], event, detail_event),
             }
 
+        # Adaptive results_per_query: increase when stagnating
+        base_results = self._runtime.config.search.results_per_query
+        if state["cycles_without_new_evidence"] >= 2:
+            adaptive_results = min(base_results * 2, 15)
+        else:
+            adaptive_results = base_results
+
         raw = []
         for spec in selected_specs:
             query = str(spec["query"])
             subquery_ids = list(spec["subquery_ids"])
             try:
-                results = self._runtime.search_client.search(query)
+                results = self._runtime.search_client.search(query, max_results=adaptive_results)
                 for candidate in results:
                     candidate.subquery_ids = list(dict.fromkeys([*candidate.subquery_ids, *subquery_ids]))
                     if candidate.discovered_via == "search":
@@ -140,6 +188,12 @@ class SourceManagerNode:
             }
 
         next_c = ranked[0]
+        remaining_queue = ranked[1:]
+
+        # Prune and cap queue after search
+        remaining_queue, cap_discarded = self._prune_and_cap_queue(state, remaining_queue)
+        new_discarded = new_discarded + cap_discarded
+
         event = self._runtime.telemetry.record("source_manager", "Discovered", verbosity=1, payload_type="queue", url=next_c.url, count=len(ranked))
         detail_event = self._runtime.telemetry.record(
             "source_manager",
@@ -153,7 +207,7 @@ class SourceManagerNode:
         return {
             "completed_search_queries": [*state["completed_search_queries"], *queries],
             "discarded_sources": new_discarded,
-            "search_queue": ranked[1:],
+            "search_queue": remaining_queue,
             "current_candidate": next_c,
             "current_browser_result": None,
             "latest_evidence": [],

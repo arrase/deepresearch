@@ -120,6 +120,7 @@ class SearchConfig(BaseModel):
     api_key: str | None = Field(default=None)
     results_per_query: int = Field(default=5, ge=1, le=20)
     max_queries_per_cycle: int = Field(default=3, ge=1, le=10)
+    max_queue_size: int = Field(default=30, ge=5, le=200)
     user_agent: str = Field(
         default=(
             "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
@@ -149,6 +150,7 @@ class RuntimeConfig(BaseModel):
     language: str = Field(default="English")
     synthesizer_output_reserve_ratio: float = Field(default=0.20, ge=0.05, lt=0.8)
     synthesizer_prompt_margin: int = Field(default=512, ge=0)
+    eval_batch_size: int = Field(default=3, ge=1, le=10)
     max_stagnation_cycles: int = Field(default=4, ge=1)
     max_consecutive_technical_failures: int = Field(default=3, ge=1)
     max_cycles_without_new_evidence: int = Field(default=3, ge=1)

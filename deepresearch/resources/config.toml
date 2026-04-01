@@ -25,6 +25,7 @@ backend = "tavily"
 api_key = ""
 results_per_query = 8
 max_queries_per_cycle = 5
+max_queue_size = 30
 user_agent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
 
 [discord]
@@ -37,6 +38,7 @@ max_iterations = 10
 verbosity = 0
 llm_retry_attempts = 2
 language = "English"
+eval_batch_size = 3
 synthesizer_output_reserve_ratio = 0.20
 synthesizer_prompt_margin = 512
 max_stagnation_cycles = 4

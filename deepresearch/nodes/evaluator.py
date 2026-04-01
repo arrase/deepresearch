@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..core.utils import compute_minimum_coverage, summarize_gaps
+from ..core.utils import compute_minimum_coverage, enrich_gaps_with_search_terms, summarize_gaps
 from ..state import ResearchState
 from .base import consume_llm_telemetry_events, record_telemetry
 
@@ -56,7 +56,8 @@ class EvaluatorNode:
                 active.append(sq)
 
         open_gaps = list({(g.subquery_id, g.description): g for g in [*d_gaps, *semantic.open_gaps]}.values())
-        
+        open_gaps = enrich_gaps_with_search_terms(open_gaps, active)
+
         synthesis_budget = self._runtime.context_manager.synthesis_budget(state)
         newly_resolved_count = max(0, len(resolved) - len(state["resolved_subqueries"]))
         progress = self._compute_progress_counters(
@@ -126,6 +127,7 @@ class EvaluatorNode:
             "active_subqueries": active, "resolved_subqueries": resolved, "open_gaps": open_gaps,
             "contradictions": semantic.contradictions, "is_sufficient": is_sufficient,
             "stop_reason": stop_reason, "current_candidate": None, "llm_usage": llm_usage,
+            "urls_visited_since_eval": 0,
             "progress_score": progress["progress_score"],
             "stagnation_cycles": progress["stagnation_cycles"],
             "consecutive_technical_failures": progress["consecutive_technical_failures"],

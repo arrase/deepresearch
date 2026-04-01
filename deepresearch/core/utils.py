@@ -170,6 +170,23 @@ def classify_browser_payload(*, content: str, error: str | None, exit_code: int 
     return BrowserPageStatus.EMPTY
 
 
+def enrich_gaps_with_search_terms(gaps: list[Gap], active_subqueries: list[Subquery]) -> list[Gap]:
+    """Ensure every gap has suggested_queries by falling back to subquery search_terms."""
+    sq_map = {sq.id: sq for sq in active_subqueries}
+    enriched = []
+    for gap in gaps:
+        if gap.suggested_queries:
+            enriched.append(gap)
+            continue
+        sq = sq_map.get(gap.subquery_id)
+        if sq and sq.search_terms:
+            gap = gap.model_copy(update={"suggested_queries": list(sq.search_terms[:5])})
+        elif sq:
+            gap = gap.model_copy(update={"suggested_queries": [sq.question]})
+        enriched.append(gap)
+    return enriched
+
+
 def deduplicate_evidence(existing: Iterable[AtomicEvidence], incoming: Iterable[AtomicEvidence]) -> list[AtomicEvidence]:
     known = {stable_evidence_key(e.source_url, e.claim, e.quotation) for e in existing}
     accepted = []
@@ -179,6 +196,54 @@ def deduplicate_evidence(existing: Iterable[AtomicEvidence], incoming: Iterable[
             known.add(key)
             accepted.append(it)
     return accepted
+
+
+def reformulate_queries(
+    original_query: str,
+    completed_queries: set[str],
+    search_terms: list[str],
+) -> list[str]:
+    """Generate alternative search queries when existing ones yield no results."""
+    variants: list[str] = []
+    seen = {q.lower().strip() for q in completed_queries}
+
+    for term in search_terms[:5]:
+        words = term.split()
+        if len(words) > 7:
+            short = " ".join(words[:5])
+            if short.lower().strip() not in seen:
+                variants.append(short)
+
+        combined = f"{original_query} {term}"
+        if combined.lower().strip() not in seen and combined != term:
+            variants.append(combined)
+
+    if not variants and search_terms:
+        fallback = " ".join(search_terms[:3])
+        if fallback.lower().strip() not in seen:
+            variants.append(fallback)
+
+    return variants[:4]
+
+
+def prune_queue_by_domain(
+    queue: list[SearchCandidate],
+    evidence: Iterable[AtomicEvidence],
+    *,
+    max_per_domain: int = 2,
+) -> tuple[list[SearchCandidate], list[tuple]]:
+    """Remove candidates from over-represented domains based on existing evidence."""
+    evidence_domains: Counter = Counter(extract_domain(e.source_url) for e in evidence)
+    saturated = {d for d, c in evidence_domains.items() if c >= 3}
+    kept, pruned = [], []
+    domain_budget: Counter = Counter()
+    for c in queue:
+        if c.domain in saturated and domain_budget[c.domain] >= max_per_domain:
+            pruned.append((c.url, SourceDiscardReason.LOW_VALUE, f"Domain {c.domain} over-represented"))
+        else:
+            kept.append(c)
+            domain_budget[c.domain] += 1
+    return kept, pruned
 
 
 def update_working_dossier(dossier: WorkingDossier, evidence: Iterable[AtomicEvidence], source_url: str | None = None, source_title: str | None = None) -> WorkingDossier:

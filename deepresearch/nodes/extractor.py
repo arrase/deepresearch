@@ -47,14 +47,25 @@ class ExtractorNode:
         payload, usage = self._runtime.llm_workers.extract_evidence_with_usage(context)
         llm_events = consume_llm_telemetry_events(self._runtime)
         
-        latest = [
-            AtomicEvidence(
-                subquery_id=targets[0],
+        latest = []
+        target_subqueries = [sq for sq in state["active_subqueries"] if sq.id in targets]
+        for item in payload.evidences:
+            best_id = targets[0]
+            if len(targets) > 1:
+                match_ids = rank_subqueries_for_source(
+                    target_subqueries,
+                    text=f"{item.claim} {item.summary}",
+                    candidate_subquery_ids=targets,
+                    limit=1,
+                )
+                if match_ids:
+                    best_id = match_ids[0]
+            latest.append(AtomicEvidence(
+                subquery_id=best_id,
                 source_url=browser_res.final_url or browser_res.url,
                 source_title=candidate.title or browser_res.title or "Unknown Source",
                 **item.model_dump()
-            ) for item in payload.evidences
-        ]
+            ))
         llm_usage = {**state.get("llm_usage", {}), "extractor": usage}
         
         event = self._runtime.telemetry.record("extractor", "Extraction complete", verbosity=1, payload_type="decision", url=browser_res.url, count=len(latest), **usage)

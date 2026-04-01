@@ -22,7 +22,7 @@ def build_graph(runtime: ResearchRuntime):
     graph.add_conditional_edges("source_manager", lambda s: "browser" if s.get("current_candidate") else "evaluator", {"browser": "browser", "evaluator": "evaluator"})
     graph.add_conditional_edges("browser", _route_after_browser, {"extractor": "extractor", "evaluator": "evaluator", "source_manager": "source_manager"})
     graph.add_edge("extractor", "context_manager")
-    graph.add_edge("context_manager", "evaluator")
+    graph.add_conditional_edges("context_manager", lambda s: _route_after_context_manager(s, runtime), {"source_manager": "source_manager", "evaluator": "evaluator"})
     graph.add_conditional_edges("evaluator", _route_after_evaluator, {"synthesizer": "synthesizer", "source_manager": "source_manager", "planner": "planner"})
     graph.add_edge("synthesizer", END)
     return graph.compile()
@@ -32,6 +32,16 @@ def _route_after_browser(state: ResearchState) -> str:
     if not res: return "source_manager"
     if res.status in {BrowserPageStatus.USEFUL, BrowserPageStatus.PARTIAL}: return "extractor"
     return "evaluator" if state.get("technical_reason") else "source_manager"
+
+
+def _route_after_context_manager(state: ResearchState, runtime: ResearchRuntime) -> str:
+    batch_size = runtime.config.runtime.eval_batch_size
+    visited_since = state.get("urls_visited_since_eval", 0)
+    has_new_evidence = bool(state.get("latest_evidence"))
+    has_queue = bool(state.get("search_queue"))
+    if visited_since < batch_size and has_queue and not has_new_evidence:
+        return "source_manager"
+    return "evaluator"
 
 
 def _route_after_evaluator(state: ResearchState) -> str:
