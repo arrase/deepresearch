@@ -1,85 +1,36 @@
-# Copilot Instructions for DeepResearch
+# Project Guidelines
 
-## Commands
+## Architecture
 
-```bash
-# Development install
-pip install -e ".[dev]"
+- DeepResearch is a LangGraph pipeline. The runtime is assembled in `deepresearch/main.py` via `build_runtime`, and the graph is defined in `deepresearch/graph.py`.
+- Keep node responsibilities separated: planner, source discovery, browser, extractor, context manager, evaluator, and synthesizer live under `deepresearch/nodes/` and should continue to communicate through `ResearchState` updates rather than direct cross-node calls.
+- Nodes should consume dependencies from `ResearchRuntime`; do not instantiate config, browser, search, or LLM clients inside node logic.
+- Prompt changes belong in `deepresearch/resources/prompts/`; update Python logic only when the contract or rendering flow changes.
+- Configuration is defined by strict Pydantic models in `deepresearch/config.py`. When adding config, update both the schema and `deepresearch/resources/config.toml`.
 
-# Run the full test suite
-python -m pytest
+## Build and Test
 
-# Run a single test file
-python -m pytest tests/test_graph_end_to_end.py
+- Use Python 3.11+.
+- Install dev dependencies with `pip install -e ".[dev]"`.
+- Run the main validation commands before finishing substantial changes: `pytest`, `ruff check .`, and `mypy .`.
+- Prefer focused test runs while iterating, then run the relevant broader suite before concluding.
+- Integration-style behavior may depend on Docker, Ollama, Tavily, or Discord configuration. Do not assume those services are available in local test runs unless the task explicitly requires them.
 
-# Run a single test
-python -m pytest tests/test_tools.py::test_duckduckgo_lite_parser_extracts_candidates
+## Code Style and Conventions
 
-# Run the CLI locally
-deepresearch "Your research query here"
-```
+- Follow the existing Python style: `from __future__ import annotations`, typed models/state objects, and small focused functions.
+- Preserve the package split already established in `deepresearch/tools/`, `deepresearch/core/`, and `deepresearch/nodes/`; avoid collapsing modules back into large utility files.
+- Nodes should return partial `ResearchState` updates that remain merge-friendly rather than rebuilding the full state object.
+- State transitions are controlled in `deepresearch/graph.py`. If behavior changes across stages, update routing logic and tests together.
+- Context construction is centralized in `deepresearch/context_manager.py`; extend that flow instead of assembling ad hoc prompt inputs inside nodes.
+- Test helpers and fake implementations belong in `tests/conftest.py` or nearby test modules. Reuse the existing deterministic fixtures pattern instead of introducing ad hoc mocks.
+- When changing search, browser, or evidence logic, prefer focused tests such as `tests/test_tools.py`, `tests/test_context_manager.py`, and `tests/test_graph_end_to_end.py` instead of relying only on broad end-to-end coverage.
+- Keep telemetry and error handling explicit. Follow the existing node patterns instead of using broad exception handling.
+- Locale-aware reporting and prompt loading are runtime concerns; keep changes consistent with the configured `runtime.language` flow.
 
-Use `./.venv/bin/python -m pytest` if the repository virtualenv is active but `pytest` is not on `PATH`.
+## Working Notes for Agents
 
-## High-level architecture
-
-DeepResearch is a LangGraph-based research pipeline assembled in `deepresearch/main.py` and `deepresearch/graph.py`.
-
-The CLI entrypoint in `deepresearch/main.py` loads `ResearchConfig`, applies CLI overrides, builds a `ResearchRuntime`, creates the initial `ResearchState`, then invokes the compiled graph and writes Markdown, PDF, or Discord output from the resulting `FinalReport`.
-
-`ResearchRuntime` is the dependency container for the graph. It wires together:
-
-- `LLMWorkers` for planner / extractor / evaluator / synthesizer calls
-- `LightpandaDockerManager` for page fetches through Docker
-- a search backend (`DuckDuckGoSearchClient` or `TavilySearchClient`)
-- `ContextManager` for token-budgeted node inputs
-- `TelemetryRecorder` for auditable execution events
-
-The state machine is:
-
-`planner -> source_manager -> browser -> extractor -> context_manager -> evaluator -> ... -> synthesizer`
-
-Routing is data-driven:
-
-- `source_manager` either pops the next queued candidate or issues new searches from gaps, search intents, and active subqueries
-- `browser` classifies fetched pages as useful / partial / blocked / empty / error
-- `extractor` only runs for useful or partial pages
-- `evaluator` combines deterministic coverage checks with LLM coverage evaluation, then decides whether research is sufficient, whether to continue sourcing, or whether to re-plan
-- `synthesizer` works from a token-budgeted context assembled by `ContextManager`, and the graph can stop early with `final_context_full`, `research_exhausted`, or `max_iterations_reached`
-
-The core design is auditability through structured state, not free-form text passing. `deepresearch/state.py` defines the durable objects that move through the graph:
-
-- `Subquery`
-- `SearchCandidate`
-- `SourceVisit`
-- `AtomicEvidence`
-- `Gap` and `Contradiction`
-- `WorkingDossier`
-- `FinalReport`
-- `TelemetryEvent`
-
-Configuration and prompts are local-first and user-editable. `ResearchConfig.load()` bootstraps `~/.deepresearch/config/` from packaged defaults in `deepresearch.resources`, and `PromptTemplateLoader` renders Jinja templates from `<config_root>/prompts` with `StrictUndefined`. When changing prompt names or variables, update both the templates and the code that renders them.
-
-## Key Conventions
-
-This codebase strongly prefers typed, validated payloads over ad hoc dictionaries. Pydantic models define config, LLM payloads, evidence objects, and reports; graph state is a `TypedDict` containing those models.
-
-Every user-facing claim should stay traceable to `AtomicEvidence`. The synthesizer builds its source list from accumulated evidence, and the working dossier is updated from accepted evidence rather than from uncited summaries.
-
-Nodes return partial state updates, not a brand-new full state object. Keep node outputs merge-friendly and consistent with the existing graph contract.
-
-Node execution is instrumented with telemetry through the `record_telemetry` decorator and `TelemetryRecorder`. If you add a node or a meaningful decision point, record it instead of silently changing state.
-
-Search and evidence handling are intentionally deterministic outside the LLM boundary. Reuse helpers in `deepresearch/core/utils.py` for URL canonicalization, deduplication, chunking, scoring, coverage checks, and dossier updates before introducing new logic.
-
-Context construction is centralized in `deepresearch/context_manager.py`. Do not hand-roll prompt context inside nodes when an existing context builder or synthesis budget helper can be extended.
-
-The planner and evaluator are expected to reason over coverage and source diversity, not just raw evidence count. Preserve the coverage summaries and source-balance signals produced by `ContextManager` when changing prompt inputs.
-
-Config and prompts are local-first and editable by the end user. Prefer adding validated config fields in `deepresearch/config.py` and consuming them through `ResearchRuntime` instead of scattering hard-coded runtime defaults.
-
-Tests lean on dependency injection with fake search, browser, and LLM workers (`tests/test_graph_end_to_end.py`). Preserve that seam when refactoring runtime wiring or node behavior.
-
-When changing search, browser, or evidence logic, prefer extending the deterministic helpers and update the focused tests in `tests/test_tools.py`, `tests/test_context_manager.py`, or `tests/test_graph_end_to_end.py` instead of only relying on end-to-end behavior.
-
-The project expects local Ollama plus Docker-backed Lightpanda during real runs, but tests avoid those external dependencies through fakes. Keep that separation intact.
+- Read `README.md` for installation, CLI flags, output modes, and environment prerequisites instead of duplicating that content here.
+- Be careful when editing DuckDuckGo or Lightpanda integrations: search redirects, browser bootstrapping, and other external-service edge cases already have project-specific handling.
+- The editable user config is bootstrapped under `~/.deepresearch/config/`. Preserve that workflow when changing configuration loading.
+- This repo uses strict config validation and typed payload contracts. Favor root-cause fixes over permissive fallbacks that hide malformed inputs.
