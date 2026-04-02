@@ -11,6 +11,11 @@ from .state import TelemetryEvent
 
 
 class TelemetryRecorder:
+    _MAX_DEPTH = 4
+    _ITEMS_BY_VERBOSITY = {0: 0, 1: 6, 2: 12, 3: 20}
+    _CHARS_BY_VERBOSITY = {0: 0, 1: 240, 2: 1200, 3: 4000}
+    _ECHO_CHARS_BY_VERBOSITY = {1: 220, 2: 420, 3: 800}
+
     def __init__(self, *, verbosity: int = 0) -> None:
         self._verbosity = verbosity
 
@@ -54,7 +59,7 @@ class TelemetryRecorder:
         payload_text = ""
         if event.payload:
             rendered = json.dumps(event.payload, ensure_ascii=True, default=str)
-            max_chars = {1: 220, 2: 420, 3: 800}.get(self._verbosity, 220)
+            max_chars = self._ECHO_CHARS_BY_VERBOSITY.get(self._verbosity, 220)
             if len(rendered) > max_chars:
                 rendered = f"{rendered[: max_chars - 3]}..."
             payload_text = f" | {rendered}"
@@ -65,9 +70,9 @@ class TelemetryRecorder:
         )
 
     def _normalize_value(self, value: Any, *, depth: int) -> Any:
-        max_depth = 4
-        max_items = {0: 0, 1: 6, 2: 12, 3: 20}.get(self._verbosity, 6)
-        max_chars = {0: 0, 1: 240, 2: 1200, 3: 4000}.get(self._verbosity, 240)
+        max_depth = self._MAX_DEPTH
+        max_items = self._ITEMS_BY_VERBOSITY.get(self._verbosity, 6)
+        max_chars = self._CHARS_BY_VERBOSITY.get(self._verbosity, 240)
 
         if depth >= max_depth:
             return "<trimmed>"
@@ -99,5 +104,5 @@ class TelemetryRecorder:
         if isinstance(value, (int, float, bool)) or value is None:
             return value
         if hasattr(value, "value"):
-            return getattr(value, "value")
+            return value.value
         return str(value)

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from deepresearch.config import ResearchConfig
-from deepresearch.core.llm import LLMInvocation, LLMWorkers, PlannerPayload
+from deepresearch.core.llm import LLMInvocation, LLMWorkers
+from deepresearch.core.payloads import PlannerPayload
 from deepresearch.telemetry import TelemetryRecorder
 
 

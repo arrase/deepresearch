@@ -7,6 +7,7 @@ final report.
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 from enum import Enum
 from typing import Any, Literal, NotRequired, TypedDict
@@ -58,19 +59,26 @@ class SearchIntent(BaseModel):
     subquery_ids: list[str] = Field(default_factory=list)
 
 
-import re
-
 def coerce_bool(v: Any) -> bool:
+    """Coerce LLM string outputs to bool.
+
+    Handles locale-aware affirmative strings ("sí", "si") and
+    trailing-period variants ("true.", "yes.") commonly seen in
+    LLM responses.
+    """
     if isinstance(v, str):
         return v.lower() in {"true", "yes", "1", "si", "sí", "true.", "yes."}
     return bool(v)
 
+
 def coerce_int(v: Any, default: int = 1) -> int:
-    if isinstance(v, int): return v
+    if isinstance(v, int):
+        return v
     try:
         match = re.search(r"\d+", str(v))
         return int(match.group()) if match else default
-    except: return default
+    except (ValueError, TypeError, AttributeError):
+        return default
 
 class Subquery(BaseModel):
     id: str = Field(default_factory=lambda: f"sq_{uuid4().hex[:10]}")

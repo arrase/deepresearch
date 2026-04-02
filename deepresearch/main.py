@@ -4,16 +4,16 @@ from __future__ import annotations
 
 import argparse
 import json
-from pathlib import Path
 import sys
+from pathlib import Path
 
-from .output_utils import generate_pdf
 from .config import ResearchConfig
 from .context_manager import ContextManager
+from .core.llm import LLMWorkers
 from .graph import build_graph
+from .output_utils import generate_pdf
 from .runtime import ResearchRuntime
 from .state import build_initial_state
-from .core.llm import LLMWorkers
 from .telemetry import TelemetryRecorder
 from .tools import DuckDuckGoSearchClient, LightpandaDockerManager, TavilySearchClient
 
@@ -39,11 +39,11 @@ def build_runtime(config: ResearchConfig, verbosity: int | None = None) -> Resea
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Auditable deep research with LangGraph, Ollama, and Lightpanda")
     parser.add_argument("query", help="Open-ended research question")
-    
+
     output_group = parser.add_mutually_exclusive_group()
     output_group.add_argument("--markdown", help="Path to write the final markdown report")
     output_group.add_argument("--pdf", help="Path to write the final PDF report")
-    
+
     parser.add_argument("--config-root", default=None, help="Path to the editable config root")
     parser.add_argument("--model", default=None, help="Ollama model name override")
     parser.add_argument("--num-ctx", type=int, default=None, help="Context window size override")
@@ -126,11 +126,12 @@ def cli() -> int:
 
     if args.discord:
         import asyncio
+
         from .outputs.discord import send_discord_report
-        
+
         print("Sending report to Discord...", file=sys.stderr, flush=True)
         success = asyncio.run(send_discord_report(config.discord, final_report))
-        
+
         if success:
             print("Report sent to Discord successfully.", file=sys.stderr, flush=True)
         else:

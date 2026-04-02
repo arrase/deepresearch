@@ -1,24 +1,30 @@
 """Planner node implementation."""
 
 from __future__ import annotations
-from typing import Any
+
+from typing import TYPE_CHECKING
+
 from ..core.utils import summarize_subqueries
 from ..state import ResearchState
 from .base import consume_llm_telemetry_events, record_telemetry
 
+if TYPE_CHECKING:
+    from ..runtime import ResearchRuntime
+
+
 class PlannerNode:
-    def __init__(self, runtime: Any) -> None:
+    def __init__(self, runtime: ResearchRuntime) -> None:
         self._runtime = runtime
 
     @record_telemetry("planner", "Planning: {query}")
     def __call__(self, state: ResearchState) -> dict:
         payload, usage = self._runtime.llm_workers.plan_research_with_usage(self._runtime.context_manager.planner_context(state))
         llm_events = consume_llm_telemetry_events(self._runtime)
-        
+
         known = {s.id for s in [*state["active_subqueries"], *state["resolved_subqueries"]]}
         new_sqs = [s for s in payload.subqueries if s.id not in known]
         llm_usage = {**state.get("llm_usage", {}), "planner": usage}
-        
+
         event = self._runtime.telemetry.record("planner", "Agenda updated", verbosity=1, payload_type="decision", new=len(new_sqs), **usage)
         detail_event = self._runtime.telemetry.record(
             "planner",

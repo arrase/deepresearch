@@ -10,6 +10,7 @@ if TYPE_CHECKING:
     from .context_manager import ContextManager
     from .core.llm import LLMWorkers
     from .telemetry import TelemetryRecorder
+    from .tools import DuckDuckGoSearchClient, LightpandaDockerManager, TavilySearchClient
 
 
 @dataclass
@@ -17,6 +18,6 @@ class ResearchRuntime:
     config: ResearchConfig
     context_manager: ContextManager
     llm_workers: LLMWorkers
-    browser: object  # LightpandaDockerManager
-    search_client: object  # DuckDuckGoSearchClient or TavilySearchClient
+    browser: LightpandaDockerManager
+    search_client: DuckDuckGoSearchClient | TavilySearchClient
     telemetry: TelemetryRecorder

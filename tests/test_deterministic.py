@@ -1,5 +1,10 @@
+from deepresearch.core.utils import (
+    canonicalize_url,
+    compute_minimum_coverage,
+    deduplicate_candidates,
+    rank_subqueries_for_source,
+)
 from deepresearch.state import AtomicEvidence, SearchCandidate, Subquery
-from deepresearch.core.utils import canonicalize_url, compute_minimum_coverage, deduplicate_candidates, rank_subqueries_for_source
 
 
 def test_canonicalize_url_removes_tracking_query_and_fragment() -> None:

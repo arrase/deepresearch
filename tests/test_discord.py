@@ -1,8 +1,12 @@
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import httpx
 import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
+
 from deepresearch.config import DiscordConfig
 from deepresearch.outputs.discord import send_discord_report
-from deepresearch.state import FinalReport, ConfidenceLevel
+from deepresearch.state import ConfidenceLevel, FinalReport
+
 
 def create_mock_report(query: str, markdown: str) -> FinalReport:
     return FinalReport(
@@ -24,7 +28,7 @@ async def test_send_discord_report_short_message() -> None:
         resp1 = MagicMock()
         resp1.status_code = 200
         resp1.json.return_value = {"id": "channel_123"}
-        
+
         # Mock send message response
         resp2 = MagicMock()
         resp2.status_code = 200
@@ -32,10 +36,10 @@ async def test_send_discord_report_short_message() -> None:
         mock_post.side_effect = [resp1, resp2]
 
         success = await send_discord_report(config, report)
-        
+
         assert success is True
         assert mock_post.call_count == 2
-        
+
         # Check second call (send message)
         args, kwargs = mock_post.call_args_list[1]
         assert "channel_123" in args[0]
@@ -52,14 +56,14 @@ async def test_send_discord_report_long_message_as_file() -> None:
         resp1 = MagicMock()
         resp1.status_code = 200
         resp1.json.return_value = {"id": "channel_123"}
-        
+
         resp2 = MagicMock()
         resp2.status_code = 200
 
         mock_post.side_effect = [resp1, resp2]
 
         success = await send_discord_report(config, report)
-        
+
         assert success is True
         assert mock_post.call_count == 2
         # Check second call (send file)
@@ -77,10 +81,10 @@ async def test_send_discord_report_failure_to_create_channel() -> None:
     with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
         resp = MagicMock()
         resp.status_code = 403
-        resp.raise_for_status.side_effect = Exception("Forbidden")
+        resp.raise_for_status.side_effect = httpx.HTTPStatusError("Forbidden", request=MagicMock(), response=resp)
         mock_post.return_value = resp
 
         success = await send_discord_report(config, report)
-        
+
         assert success is False
         assert mock_post.call_count == 1

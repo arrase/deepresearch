@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING
 
-from ..state import ResearchState, FinalReport, ConfidenceLevel
 from ..core.utils import build_report_sources
+from ..state import ConfidenceLevel, FinalReport, ResearchState
 from .base import consume_llm_telemetry_events, record_telemetry
+
+if TYPE_CHECKING:
+    from ..runtime import ResearchRuntime
 
 
 class SynthesizerNode:
-    def __init__(self, runtime: Any) -> None:
+    def __init__(self, runtime: ResearchRuntime) -> None:
         self._runtime = runtime
 
     @record_telemetry("synthesizer", "Synthesizing report: {query}")
@@ -22,8 +25,8 @@ class SynthesizerNode:
                 context,
                 query=state["query"]
             )
-        except Exception:
-            usage = {}
+        except (ValueError, KeyError, OSError):
+            usage: dict[str, int] = {}
             report = FinalReport(
                 query=state["query"], executive_answer="Synthesis failed.",
                 key_findings=["Error in synthesis."],

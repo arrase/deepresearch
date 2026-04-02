@@ -1,17 +1,18 @@
 """Utility functions for report output generation (PDF, etc.)."""
 
 from __future__ import annotations
+
 from pathlib import Path
 
 
 def generate_pdf(markdown_text: str, output_path: Path | None = None) -> bytes:
     """
-    Converts markdown text to a PDF. 
+    Converts markdown text to a PDF.
     If output_path is provided, writes to disk.
     Always returns the PDF bytes.
     """
     import markdown
-    from weasyprint import HTML, CSS
+    from weasyprint import CSS, HTML
 
     css = """
     @page {

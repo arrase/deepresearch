@@ -16,13 +16,13 @@ import httpx
 from bs4 import BeautifulSoup
 
 from .config import BrowserConfig, SearchConfig
-from .state import BrowserPageStatus, SearchCandidate, SourceVisit
 from .core.utils import (
     canonicalize_url,
     classify_browser_payload,
     extract_domain,
     short_excerpt,
 )
+from .state import BrowserPageStatus, SearchCandidate, SourceVisit
 
 
 class DuckDuckGoSearchClient:
@@ -175,6 +175,14 @@ class LightpandaDockerManager:
         self._client = docker.from_env()
 
     def fetch(self, url: str) -> SourceVisit:
+        parsed_url = urlparse(url)
+        if parsed_url.scheme not in ("http", "https") or not parsed_url.netloc:
+            return SourceVisit(
+                url=url,
+                status=BrowserPageStatus.TERMINAL_ERROR,
+                error=f"Invalid URL scheme or missing host: {url}",
+            )
+
         command = [
             "/bin/lightpanda",
             "fetch",

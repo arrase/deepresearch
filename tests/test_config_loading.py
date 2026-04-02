@@ -4,10 +4,11 @@ import argparse
 import sys
 
 import pytest
+from pydantic import ValidationError
+
 from deepresearch.config import ResearchConfig
 from deepresearch.main import apply_cli_overrides, parse_args
 from deepresearch.prompting import PromptTemplateLoader
-from pydantic import ValidationError
 
 
 def test_load_bootstraps_project_style_config_root(tmp_path) -> None:

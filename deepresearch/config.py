@@ -7,12 +7,11 @@ of inventing stage-specific defaults at call sites.
 
 from __future__ import annotations
 
-from pathlib import Path
 import tomllib
 from importlib import resources
+from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
-
 
 DEFAULT_CONFIG_ENV_VAR = "DEEPRESEARCH_CONFIG_ROOT"
 DEFAULT_CONFIG_FILENAME = "config.toml"
@@ -37,7 +36,7 @@ def resolve_config_root(override: str | Path | None = None) -> Path:
     """
     if override is not None:
         return Path(override).expanduser().resolve()
-    
+
     return (Path.home() / ".deepresearch" / "config").resolve()
 
 
@@ -46,13 +45,13 @@ def bootstrap_config_root(config_root: Path) -> None:
 
     # Get the source root as a Traversable object
     source_root = resources.files("deepresearch.resources")
-    
+
     config_root = config_root.resolve()
     config_root.mkdir(parents=True, exist_ok=True)
-    
+
     # We can't easily compare Traversable to Path for equality if installed as wheel,
     # but we only bootstrap if config_root doesn't exist or is missing files.
-    
+
     _copy_resource_to_path(source_root / DEFAULT_CONFIG_FILENAME, config_root / DEFAULT_CONFIG_FILENAME)
     _copy_resource_tree(source_root / "prompts", config_root / "prompts")
 
@@ -64,7 +63,7 @@ def _copy_resource_tree(source: resources.abc.Traversable, target: Path) -> None
         for child in source.iterdir():
             _copy_resource_tree(child, target / child.name)
         return
-    
+
     # It's a file
     if not target.exists():
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -179,7 +178,7 @@ class ResearchConfig(BaseModel):
     def load(cls, *, config_root: str | Path | None = None) -> ResearchConfig:
         resolved_root = resolve_config_root(config_root)
         config_file_path = resolved_root / DEFAULT_CONFIG_FILENAME
-        
+
         if not config_file_path.exists():
             bootstrap_config_root(resolved_root)
 

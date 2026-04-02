@@ -5,10 +5,18 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 
 from pydantic import BaseModel, Field
+
 from .config import ResearchConfig
-from .state import AtomicEvidence, Gap, ResearchState, Subquery
-from .core.utils import estimate_tokens, extract_domain, select_evidence_for_context, summarize_gaps, total_evidence_tokens
+from .core.utils import (
+    estimate_tokens,
+    extract_domain,
+    select_evidence_for_context,
+    summarize_gaps,
+    total_evidence_tokens,
+)
 from .prompting import PromptTemplateLoader
+from .state import AtomicEvidence, Gap, ResearchState, Subquery
+
 
 class NodeContext(BaseModel):
     query: str

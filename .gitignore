@@ -7,3 +7,4 @@ logs/
 archivo_salida.log
 **/**.egg-info
 **/build
+**/.ruff_cache

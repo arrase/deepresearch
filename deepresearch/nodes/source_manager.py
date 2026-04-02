@@ -1,8 +1,10 @@
 """Source manager node implementation."""
 
 from __future__ import annotations
+
 from collections import Counter
-from typing import Any
+from typing import TYPE_CHECKING
+
 from ..core.utils import (
     deduplicate_candidates,
     prune_queue_by_domain,
@@ -14,8 +16,12 @@ from ..core.utils import (
 from ..state import DiscardedSource, ResearchState
 from .base import record_telemetry
 
+if TYPE_CHECKING:
+    from ..runtime import ResearchRuntime
+
+
 class SourceManagerNode:
-    def __init__(self, runtime: Any) -> None:
+    def __init__(self, runtime: ResearchRuntime) -> None:
         self._runtime = runtime
 
     def _build_query_specs(self, state: ResearchState) -> list[dict[str, object]]:
@@ -146,7 +152,7 @@ class SourceManagerNode:
                     if candidate.discovered_via == "search":
                         candidate.discovered_via = str(spec["discovered_via"])
                 raw.extend(results)
-            except Exception as e:
+            except (ValueError, OSError, RuntimeError) as e:
                 event = self._runtime.telemetry.record("source_manager", "Search error", verbosity=1, payload_type="error", q=query, err=str(e))
                 return {
                     "completed_search_queries": [*state["completed_search_queries"], query],

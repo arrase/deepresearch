@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING
 
 from ..core.utils import summarize_source_visit
 from ..state import BrowserPageStatus, DiscardedSource, ResearchState, SourceDiscardReason, SourceVisit
 from .base import record_telemetry
 
+if TYPE_CHECKING:
+    from ..runtime import ResearchRuntime
+
 
 class BrowserNode:
-    def __init__(self, runtime: Any) -> None:
+    def __init__(self, runtime: ResearchRuntime) -> None:
         self._runtime = runtime
 
     @record_telemetry("browser", "Navigating to: {query}")
@@ -35,14 +38,14 @@ class BrowserNode:
 
         result = self._runtime.browser.fetch(candidate.url)
         visited = dict(state["visited_urls"])
-        
+
         # Preserve original candidate subqueries and ensure title
         result.candidate_subquery_ids = candidate.subquery_ids
         if not result.title:
             result.title = candidate.title or "Unknown Title"
-            
+
         visited[result.url] = result
-        
+
         discarded_sources = [*state["discarded_sources"]]
         if result.status not in {BrowserPageStatus.USEFUL, BrowserPageStatus.PARTIAL}:
             reason_map = {
@@ -58,7 +61,7 @@ class BrowserNode:
                     note=result.error or result.status.value,
                 )
             )
-            
+
         event = self._runtime.telemetry.record(
             "browser",
             "Navigation completed",

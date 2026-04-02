@@ -25,6 +25,8 @@ dependencies = [
 dev = [
     "pytest>=8.4.1",
     "pytest-asyncio>=0.23.0",
+    "ruff>=0.8.0",
+    "mypy>=1.13.0",
 ]
 
 [project.scripts]
@@ -37,7 +39,38 @@ include = ["deepresearch*"]
 
 [tool.setuptools.package-data]
 "deepresearch.resources" = ["*.toml", "**/*.j2"]
+"deepresearch" = ["py.typed"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+markers = [
+    "asyncio: marks tests as async (deselect with '-m \"not asyncio\"')",
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests that require external services",
+]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "F",    # pyflakes
+    "W",    # pycodestyle warnings
+    "I",    # isort
+    "B",    # flake8-bugbear
+    "BLE",  # flake8-blind-except
+    "UP",   # pyupgrade
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["deepresearch"]
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+ignore_missing_imports = true

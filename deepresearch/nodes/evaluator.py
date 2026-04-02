@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING
 
 from ..core.utils import compute_minimum_coverage, enrich_gaps_with_search_terms, summarize_gaps
 from ..state import ResearchState
 from .base import consume_llm_telemetry_events, record_telemetry
 
+if TYPE_CHECKING:
+    from ..runtime import ResearchRuntime
+
 
 class EvaluatorNode:
-    def __init__(self, runtime: Any) -> None:
+    def __init__(self, runtime: ResearchRuntime) -> None:
         self._runtime = runtime
 
     def _compute_progress_counters(
@@ -45,9 +48,9 @@ class EvaluatorNode:
         d_resolved_ids, d_gaps = compute_minimum_coverage(state["active_subqueries"], state["atomic_evidence"])
         semantic, usage = self._runtime.llm_workers.evaluate_coverage_with_usage(self._runtime.context_manager.evaluator_context(state))
         llm_events = consume_llm_telemetry_events(self._runtime)
-        
+
         resolved_ids = set(d_resolved_ids) | {sid for sid in semantic.resolved_subquery_ids if any(e.subquery_id == sid for e in state["atomic_evidence"])}
-        
+
         active, resolved = [], list(state["resolved_subqueries"])
         for sq in state["active_subqueries"]:
             if sq.id in resolved_ids:

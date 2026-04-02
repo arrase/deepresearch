@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import functools
-from typing import Any, Callable, TypeVar
+from collections.abc import Callable
+from typing import Any, TypeVar
 
 from ..state import ResearchState
 
@@ -19,7 +20,7 @@ def consume_llm_telemetry_events(runtime: Any) -> list[Any]:
 
 def record_telemetry(stage: str, message_template: str) -> Callable[[F], F]:
     """Decorator to record telemetry events for a node.
-    
+
     It records a 'start' event and handles potential errors by recording them
     in the state.
     """
@@ -40,18 +41,18 @@ def record_telemetry(stage: str, message_template: str) -> Callable[[F], F]:
                 payload_type="lifecycle",
                 **kwargs.get("telemetry_payload", {}),
             )
-            
+
             # Update state with telemetry
             state_with_telemetry = {
                 **state,
                 "telemetry": self._runtime.telemetry.extend(state.get("telemetry", []), start_event),
             }
-            
+
             try:
                 # Execute the node logic
                 result = func(self, state_with_telemetry, *args, **kwargs)
                 return result
-            except Exception as e:
+            except (ValueError, KeyError, TypeError, OSError, RuntimeError) as e:
                 llm_events = consume_llm_telemetry_events(self._runtime)
                 # Record error event
                 error_event = self._runtime.telemetry.record(

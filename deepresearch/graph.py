@@ -1,12 +1,15 @@
 """Research StateGraph assembly."""
 
 from __future__ import annotations
+
 from langgraph.graph import END, START, StateGraph
-from .runtime import ResearchRuntime
+
 from .nodes import ResearchNodes
+from .runtime import ResearchRuntime
 from .state import BrowserPageStatus, ResearchState
 
-def build_graph(runtime: ResearchRuntime):
+
+def build_graph(runtime: ResearchRuntime) -> object:
     nodes = ResearchNodes(runtime)
     graph = StateGraph(ResearchState)
     graph.add_node("planner", nodes.planner)
@@ -19,18 +22,41 @@ def build_graph(runtime: ResearchRuntime):
 
     graph.add_edge(START, "planner")
     graph.add_edge("planner", "source_manager")
-    graph.add_conditional_edges("source_manager", lambda s: "browser" if s.get("current_candidate") else "evaluator", {"browser": "browser", "evaluator": "evaluator"})
-    graph.add_conditional_edges("browser", _route_after_browser, {"extractor": "extractor", "evaluator": "evaluator", "source_manager": "source_manager"})
+    graph.add_conditional_edges(
+        "source_manager",
+        _route_after_source_manager,
+        {"browser": "browser", "evaluator": "evaluator"},
+    )
+    graph.add_conditional_edges(
+        "browser",
+        _route_after_browser,
+        {"extractor": "extractor", "evaluator": "evaluator", "source_manager": "source_manager"},
+    )
     graph.add_edge("extractor", "context_manager")
-    graph.add_conditional_edges("context_manager", lambda s: _route_after_context_manager(s, runtime), {"source_manager": "source_manager", "evaluator": "evaluator"})
-    graph.add_conditional_edges("evaluator", _route_after_evaluator, {"synthesizer": "synthesizer", "source_manager": "source_manager", "planner": "planner"})
+    graph.add_conditional_edges(
+        "context_manager",
+        lambda s: _route_after_context_manager(s, runtime),
+        {"source_manager": "source_manager", "evaluator": "evaluator"},
+    )
+    graph.add_conditional_edges(
+        "evaluator",
+        _route_after_evaluator,
+        {"synthesizer": "synthesizer", "source_manager": "source_manager", "planner": "planner"},
+    )
     graph.add_edge("synthesizer", END)
     return graph.compile()
 
+
+def _route_after_source_manager(state: ResearchState) -> str:
+    return "browser" if state.get("current_candidate") else "evaluator"
+
+
 def _route_after_browser(state: ResearchState) -> str:
     res = state.get("current_browser_result")
-    if not res: return "source_manager"
-    if res.status in {BrowserPageStatus.USEFUL, BrowserPageStatus.PARTIAL}: return "extractor"
+    if not res:
+        return "source_manager"
+    if res.status in {BrowserPageStatus.USEFUL, BrowserPageStatus.PARTIAL}:
+        return "extractor"
     return "evaluator" if state.get("technical_reason") else "source_manager"
 
 
