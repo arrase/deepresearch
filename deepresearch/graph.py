@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Protocol, cast
+
 from langgraph.graph import END, START, StateGraph
 
 from .nodes import ResearchNodes
@@ -9,7 +11,11 @@ from .runtime import ResearchRuntime
 from .state import BrowserPageStatus, ResearchState
 
 
-def build_graph(runtime: ResearchRuntime) -> object:
+class CompiledResearchGraph(Protocol):
+    def invoke(self, input: ResearchState, config: object | None = None) -> ResearchState: ...
+
+
+def build_graph(runtime: ResearchRuntime) -> CompiledResearchGraph:
     nodes = ResearchNodes(runtime)
     graph = StateGraph(ResearchState)
     graph.add_node("planner", nodes.planner)
@@ -44,7 +50,7 @@ def build_graph(runtime: ResearchRuntime) -> object:
         {"synthesizer": "synthesizer", "source_manager": "source_manager", "planner": "planner"},
     )
     graph.add_edge("synthesizer", END)
-    return graph.compile()
+    return cast(CompiledResearchGraph, graph.compile())
 
 
 def _route_after_source_manager(state: ResearchState) -> str:

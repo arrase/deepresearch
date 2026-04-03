@@ -7,7 +7,7 @@ It is built for users who want something more deliberate than a single retrieval
 ## ✨ Key Features
 
 - **Autonomous Research:** Decomposes complex queries into subqueries and search intents.
-- **Local-First:** Optimized for local models (like Qwen 2.5 or Llama 3) via Ollama. No data leaves your machine except for web searches.
+- **Local-First:** Optimized for local models (like Qwen 2.5 or Llama 3) via Ollama. No data leaves your machine except for web searches, and optionally LangSmith traces if you enable them.
 - **Web-Scale Browsing:** Uses [Lightpanda](https://lightpanda.io/), a high-performance headless browser, to navigate and extract content from the real web.
 - **Traceable & Auditable:** Every claim in the final report is backed by atomic evidence, specific URLs, and direct quotations.
 - **Iterative Refinement:** Evaluates its own progress, identifies knowledge gaps or contradictions, and performs follow-up searches.
@@ -19,7 +19,7 @@ It is built for users who want something more deliberate than a single retrieval
 - Breaking a broad question into smaller research tasks.
 - Collecting evidence from multiple web sources instead of answering from one snippet.
 - Producing a report in Markdown or PDF, or delivering it through Discord.
-- Letting you inspect the run with increasing debug detail when you need to understand what happened.
+- Letting you inspect the run with configurable progress logs and optional LangSmith traces when you need to understand what happened.
 - Keeping configuration editable under your home directory instead of hiding it inside the package.
 
 ## Limitations And Caveats
@@ -30,6 +30,7 @@ It is built for users who want something more deliberate than a single retrieval
 - PDF generation relies on WeasyPrint and may depend on standard system libraries on minimal Linux installations.
 - Real-world browsing can still fail on sites that block automation, require authentication, or depend on interactions outside the current browser flow.
 - Search quality and source availability vary over time; the tool can only reason over what it can successfully discover and fetch during the run.
+- If you enable LangSmith, trace data is sent to the configured LangSmith endpoint.
 
 ## Who It Is For
 
@@ -163,7 +164,7 @@ deepresearch "your question" [options]
 | `--num-ctx N` | Override the model context window |
 | `--max-iterations N` | Override the maximum number of research cycles |
 | `--config-root PATH` | Use a different editable config directory |
-| `--verbosity {0,1,2,3}` | Control telemetry and debug detail |
+| `--verbosity {0,1,2,3}` | Control local progress logging detail |
 
 `--markdown` and `--pdf` are mutually exclusive. `--discord` can be used on its own or combined with either of the file-output options.
 
@@ -187,7 +188,7 @@ Override the model and context window for one run:
 deepresearch "Track the strongest open-source coding models this quarter" --model llama3.1:8b --num-ctx 65536
 ```
 
-Run with live debug output:
+Run with live progress logging:
 
 ```bash
 deepresearch "Evaluate the current state of multimodal local models" --verbosity 2
@@ -215,12 +216,12 @@ The CLI always prints the executive answer to standard output when a final repor
 
 Use `--verbosity` when you want insight into how the run progressed.
 
-- `0`: no telemetry output
-- `1`: graph-level progress through planning, discovery, browsing, extraction, evaluation, and synthesis
-- `2`: adds LLM orchestration details and JSON-repair paths
-- `3`: adds dossier snapshots and page-level processing details
+- `0`: no local progress logs
+- `1`: stage-level progress through planning, discovery, browsing, extraction, evaluation, and synthesis
+- `2`: adds decision summaries such as counts, stop reasons, and search outcomes
+- `3`: adds more detailed local diagnostics such as ranked candidates, selected chunks, and dossier snapshots
 
-Higher verbosity is useful for debugging weak results, stalled runs, or unexpected source choices.
+Higher verbosity is useful for debugging weak results, stalled runs, or unexpected source choices. For full execution traces, enable LangSmith in the config file.
 
 ## Configuration
 
@@ -282,6 +283,19 @@ max_cycles_without_useful_sources = 4
 ```
 
 Use this section when you want to make runs shorter, more persistent, or emit reports in a different language.
+
+### LangSmith settings
+
+```toml
+[langsmith]
+enabled = false
+tracing = true
+endpoint = "https://eu.api.smith.langchain.com"
+api_key = "YOUR_LANGSMITH_API_KEY"
+project = "DeepResearch"
+```
+
+If `enabled = true`, DeepResearch traces LangGraph, node execution, and LangChain/Ollama calls to LangSmith using these values from `config.toml`. You do not need to export `LANGSMITH_*` environment variables manually.
 
 ## Search Backends And Model Choices
 

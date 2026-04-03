@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from langsmith import traceable
+
 from ..core.utils import compute_minimum_coverage, enrich_gaps_with_search_terms, summarize_gaps
 from ..state import ResearchState
-from .base import consume_llm_telemetry_events, record_telemetry
+from .base import log_node_activity, log_runtime_event
 
 if TYPE_CHECKING:
     from ..runtime import ResearchRuntime
@@ -27,11 +29,23 @@ class EvaluatorNode:
         progress_score += newly_resolved_count * runtime.weight_resolved_subquery
 
         evidence_count = len(state.get("latest_evidence", []))
-        useful_source_seen = bool(state.get("current_browser_result") and state["current_browser_result"].status.value in {"useful", "partial"})
+        current_browser_result = state.get("current_browser_result")
+        useful_source_seen = bool(
+            current_browser_result
+            and current_browser_result.status.value in {"useful", "partial"}
+        )
         technical_reason = state.get("technical_reason")
 
-        stagnation_cycles = 0 if progress_score >= runtime.min_progress_score_to_reset_stagnation else state["stagnation_cycles"] + 1
-        consecutive_technical_failures = state["consecutive_technical_failures"] + 1 if technical_reason in {"no_results", "no_queries", "search_error"} else 0
+        stagnation_cycles = (
+            0
+            if progress_score >= runtime.min_progress_score_to_reset_stagnation
+            else state["stagnation_cycles"] + 1
+        )
+        consecutive_technical_failures = (
+            state["consecutive_technical_failures"] + 1
+            if technical_reason in {"no_results", "no_queries", "search_error"}
+            else 0
+        )
         cycles_without_new_evidence = 0 if evidence_count > 0 else state["cycles_without_new_evidence"] + 1
         cycles_without_useful_sources = 0 if useful_source_seen else state["cycles_without_useful_sources"] + 1
 
@@ -43,13 +57,19 @@ class EvaluatorNode:
             "cycles_without_useful_sources": cycles_without_useful_sources,
         }
 
-    @record_telemetry("evaluator", "Evaluating: {query}")
+    @traceable(name="evaluator-node")
+    @log_node_activity("evaluator", "Evaluating: {query}")
     def __call__(self, state: ResearchState) -> dict:
         d_resolved_ids, d_gaps = compute_minimum_coverage(state["active_subqueries"], state["atomic_evidence"])
-        semantic, usage = self._runtime.llm_workers.evaluate_coverage_with_usage(self._runtime.context_manager.evaluator_context(state))
-        llm_events = consume_llm_telemetry_events(self._runtime)
+        semantic, usage = self._runtime.llm_workers.evaluate_coverage_with_usage(
+            self._runtime.context_manager.evaluator_context(state)
+        )
 
-        resolved_ids = set(d_resolved_ids) | {sid for sid in semantic.resolved_subquery_ids if any(e.subquery_id == sid for e in state["atomic_evidence"])}
+        resolved_ids = set(d_resolved_ids) | {
+            sid
+            for sid in semantic.resolved_subquery_ids
+            if any(e.subquery_id == sid for e in state["atomic_evidence"])
+        }
 
         active, resolved = [], list(state["resolved_subqueries"])
         for sq in state["active_subqueries"]:
@@ -72,9 +92,11 @@ class EvaluatorNode:
             stop_reason = "final_context_full"
         if stop_reason is None and (
             progress["stagnation_cycles"] >= self._runtime.config.runtime.max_stagnation_cycles
-            or progress["consecutive_technical_failures"] >= self._runtime.config.runtime.max_consecutive_technical_failures
+            or progress["consecutive_technical_failures"]
+            >= self._runtime.config.runtime.max_consecutive_technical_failures
             or progress["cycles_without_new_evidence"] >= self._runtime.config.runtime.max_cycles_without_new_evidence
-            or progress["cycles_without_useful_sources"] >= self._runtime.config.runtime.max_cycles_without_useful_sources
+            or progress["cycles_without_useful_sources"]
+            >= self._runtime.config.runtime.max_cycles_without_useful_sources
         ):
             stop_reason = "research_exhausted"
         if stop_reason is None and state["iteration"] >= state["max_iterations"]:
@@ -82,11 +104,10 @@ class EvaluatorNode:
         is_sufficient = semantic.is_sufficient or stop_reason is not None
         llm_usage = {**state.get("llm_usage", {}), "evaluator": usage}
 
-        event = self._runtime.telemetry.record(
-            "evaluator",
-            "Evaluated",
+        log_runtime_event(
+            self._runtime,
+            "[evaluator] Evaluated",
             verbosity=1,
-            payload_type="decision",
             resolved=len(resolved),
             active=len(active),
             sufficient=is_sufficient,
@@ -102,11 +123,10 @@ class EvaluatorNode:
             **{k: v for k, v in synthesis_budget.items() if isinstance(v, (int, bool))},
             **usage,
         )
-        detail_event = self._runtime.telemetry.record(
-            "evaluator",
-            "Coverage decision details",
+        log_runtime_event(
+            self._runtime,
+            "[evaluator] Coverage decision details",
             verbosity=2,
-            payload_type="llm_decision",
             deterministic_resolved_ids=d_resolved_ids,
             semantic_resolved_ids=semantic.resolved_subquery_ids,
             combined_resolved_ids=sorted(resolved_ids),
@@ -114,11 +134,10 @@ class EvaluatorNode:
             open_gaps=summarize_gaps(open_gaps),
             contradictions=[item.model_dump(mode="json") for item in semantic.contradictions[:5]],
         )
-        dossier_event = self._runtime.telemetry.record(
-            "evaluator",
-            "Coverage snapshot after evaluation",
+        log_runtime_event(
+            self._runtime,
+            "[evaluator] Coverage snapshot after evaluation",
             verbosity=3,
-            payload_type="dossier_snapshot",
             snapshot=self._runtime.context_manager.debug_state_snapshot({
                 **state,
                 "active_subqueries": active,
@@ -127,9 +146,14 @@ class EvaluatorNode:
             }),
         )
         return {
-            "active_subqueries": active, "resolved_subqueries": resolved, "open_gaps": open_gaps,
-            "contradictions": semantic.contradictions, "is_sufficient": is_sufficient,
-            "stop_reason": stop_reason, "current_candidate": None, "llm_usage": llm_usage,
+            "active_subqueries": active,
+            "resolved_subqueries": resolved,
+            "open_gaps": open_gaps,
+            "contradictions": semantic.contradictions,
+            "is_sufficient": is_sufficient,
+            "stop_reason": stop_reason,
+            "current_candidate": None,
+            "llm_usage": llm_usage,
             "urls_visited_since_eval": 0,
             "progress_score": progress["progress_score"],
             "stagnation_cycles": progress["stagnation_cycles"],
@@ -137,5 +161,4 @@ class EvaluatorNode:
             "cycles_without_new_evidence": progress["cycles_without_new_evidence"],
             "cycles_without_useful_sources": progress["cycles_without_useful_sources"],
             "synthesis_budget": synthesis_budget,
-            "telemetry": self._runtime.telemetry.extend(state["telemetry"], *llm_events, event, detail_event, dossier_event),
         }

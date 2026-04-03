@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from pathlib import Path
-
+from typing import cast
+import markdown
+from weasyprint import CSS, HTML
 
 def generate_pdf(markdown_text: str, output_path: Path | None = None) -> bytes:
     """
@@ -11,8 +13,6 @@ def generate_pdf(markdown_text: str, output_path: Path | None = None) -> bytes:
     If output_path is provided, writes to disk.
     Always returns the PDF bytes.
     """
-    import markdown
-    from weasyprint import CSS, HTML
 
     css = """
     @page {
@@ -110,4 +110,4 @@ def generate_pdf(markdown_text: str, output_path: Path | None = None) -> bytes:
     """
 
     pdf_bytes = HTML(string=full_html).write_pdf(output_path, stylesheets=[CSS(string=css)])
-    return pdf_bytes
+    return cast(bytes, pdf_bytes)

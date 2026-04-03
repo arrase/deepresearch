@@ -20,7 +20,7 @@ class PlannerPayload(BaseModel):
     def validate_subqueries(cls, v: Any) -> Any:
         if not isinstance(v, list):
             return []
-        cleaned = []
+        cleaned: list[Subquery | dict[str, Any]] = []
         for sq in v:
             if isinstance(sq, Subquery):
                 cleaned.append(sq)

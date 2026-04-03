@@ -13,12 +13,12 @@ from deepresearch.state import (
     BrowserPageStatus,
     ConfidenceLevel,
     FinalReport,
+    ReportSource,
     SearchCandidate,
     SearchIntent,
     SourceVisit,
     Subquery,
 )
-from deepresearch.telemetry import TelemetryRecorder
 
 # ---------------------------------------------------------------------------
 # Fake search clients
@@ -142,17 +142,19 @@ class FakeLLMWorkers:
             executive_answer="Fusion demand increased in 2026 according to the accepted source.",
             key_findings=["Demand increased in 2026"],
             confidence=ConfidenceLevel.HIGH,
-            cited_sources=[{"url": "https://example.com/report", "title": "Example report", "evidence_ids": ["ev1"]}],
+            cited_sources=[
+                ReportSource(
+                    url="https://example.com/report",
+                    title="Example report",
+                    evidence_ids=["ev1"],
+                )
+            ],
             evidence_ids=["ev1"],
             markdown_report="# Research Report\n\nFusion demand is rising.",
         )
 
     def synthesize_report_with_usage(self, context: object, query: str) -> tuple[FinalReport, dict[str, int]]:
         return self.synthesize_report(context, query), {"input_tokens": 30, "output_tokens": 40, "total_tokens": 70}
-
-    def consume_telemetry_events(self) -> list:
-        return []
-
 
 class InsufficientLLMWorkers(FakeLLMWorkers):
     """LLM worker that never considers coverage sufficient."""
@@ -209,7 +211,6 @@ def fake_runtime(research_config: ResearchConfig, context_manager: ContextManage
         llm_workers=FakeLLMWorkers(),
         browser=FakeBrowser(),
         search_client=FakeSearchClient(),
-        telemetry=TelemetryRecorder(),
     )
 
 

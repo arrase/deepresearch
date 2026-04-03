@@ -4,20 +4,20 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any, NamedTuple, TypeVar
+from typing import Any, Literal, NamedTuple, TypeVar, cast
 
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from langchain_core.output_parsers import PydanticOutputParser
 from langchain_ollama import ChatOllama
+from langsmith import traceable
 from pydantic import BaseModel, ValidationError
 
 from ..config import ResearchConfig
 from ..context_manager import NodeContext
 from ..prompting import PromptTemplateLoader
-from ..state import FinalReport, TelemetryEvent
-from ..telemetry import TelemetryRecorder
+from ..state import FinalReport
 from .payloads import CoveragePayload, EvidencePayload, PlannerPayload
-from .utils import build_report_sources, estimate_tokens
+from .utils import build_report_sources
 
 _JSON_FALLBACK_INSTRUCTION = "Return valid JSON only."
 
@@ -30,51 +30,22 @@ class LLMInvocation(NamedTuple):
 
 
 class LLMWorkers:
-    def __init__(self, config: ResearchConfig, telemetry: TelemetryRecorder | None = None) -> None:
+    def __init__(self, config: ResearchConfig) -> None:
         self._config = config
-        self._telemetry = telemetry
-        self._pending_telemetry: list[TelemetryEvent] = []
         self._prompt_loader = PromptTemplateLoader(config.prompts_dir, strict_templates=True)
 
-    def consume_telemetry_events(self) -> list[TelemetryEvent]:
-        pending = self._pending_telemetry
-        self._pending_telemetry = []
-        return pending
-
-    def _record_debug_event(
-        self,
-        stage: str,
-        message: str,
-        *,
-        verbosity: int = 2,
-        payload_type: str = "llm_response",
-        **payload: Any,
-    ) -> None:
-        if self._telemetry is None:
-            return
-        event = self._telemetry.record(
-            stage,
-            message,
-            verbosity=verbosity,
-            payload_type=payload_type,
-            **payload,
-        )
-        if event is not None:
-            self._pending_telemetry.append(event)
-
     def _llm(self, temperature: float, json_format: bool = True) -> ChatOllama:
-        kwargs = {
-            "model": self._config.model.model_name,
-            "base_url": self._config.model.base_url,
-            "temperature": temperature,
-            "num_ctx": self._config.model.num_ctx,
-            "num_predict": self._config.model.num_predict,
-            "timeout": self._config.model.timeout_seconds,
-            "disable_streaming": True,
-        }
-        if json_format:
-            kwargs["format"] = "json"
-        return ChatOllama(**kwargs)
+        format_value: Literal["json"] | None = "json" if json_format else None
+        return ChatOllama(
+            model=self._config.model.model_name,
+            base_url=self._config.model.base_url,
+            temperature=temperature,
+            num_ctx=self._config.model.num_ctx,
+            num_predict=self._config.model.num_predict,
+            disable_streaming=True,
+            format=format_value,
+            sync_client_kwargs={"timeout": self._config.model.timeout_seconds},
+        )
 
     def _extract_usage(self, response: Any) -> dict[str, int]:
         usage: dict[str, int] = {}
@@ -108,26 +79,34 @@ class LLMWorkers:
             usage["total_tokens"] = usage["input_tokens"] + usage["output_tokens"]
         return usage
 
-    def _invoke(self, llm: ChatOllama, messages: list[SystemMessage | HumanMessage]) -> LLMInvocation:
+    def _invoke(self, llm: ChatOllama, messages: list[BaseMessage]) -> LLMInvocation:
         response = llm.invoke(messages)
         return LLMInvocation(content=str(response.content), usage=self._extract_usage(response))
 
-    def _parse_response(self, prompt_name: str, variables: dict[str, Any], schema: type[TModel], temperature: float) -> tuple[TModel, dict[str, int]]:
+    def _parse_response(
+        self,
+        prompt_name: str,
+        variables: dict[str, Any],
+        schema: type[TModel],
+        temperature: float,
+    ) -> tuple[TModel, dict[str, int]]:
         parser = PydanticOutputParser(pydantic_object=schema)
         try:
             instructions = self._prompt_loader.render_format(prompt_name, variables)
         except (FileNotFoundError, OSError, ValueError):
             instructions = _JSON_FALLBACK_INSTRUCTION
 
-        prompt_pair = self._prompt_loader.render(prompt_name, {
-            **variables,
-            "language": self._config.runtime.language,
-            "format_instructions": instructions
-        })
+        prompt_pair = self._prompt_loader.render(
+            prompt_name,
+            {
+                **variables,
+                "language": self._config.runtime.language,
+                "format_instructions": instructions,
+            },
+        )
 
         llm = self._llm(temperature=temperature)
         messages = [SystemMessage(content=prompt_pair.system), HumanMessage(content=prompt_pair.human)]
-        prompt_tokens = estimate_tokens(prompt_pair.system) + estimate_tokens(prompt_pair.human)
 
         raw_text = ""
         usage: dict[str, int] = {}
@@ -138,84 +117,44 @@ class LLMWorkers:
             usage = invocation.usage
             parsed = self._try_parse(parser, raw_text, schema)
             if parsed:
-                self._record_debug_event(
-                    prompt_name,
-                    "LLM response parsed",
-                    worker=prompt_name,
-                    temperature=temperature,
-                    prompt_tokens=prompt_tokens,
-                    usage=usage,
-                    raw_output=raw_text,
-                    parsed_output=parsed.model_dump(mode="json"),
-                    repair_attempted=False,
-                )
                 return parsed, usage
         except (json.JSONDecodeError, ValidationError, ValueError, KeyError) as e:
             parse_error = str(e)
             raw_text = f"Error: {e}"
 
-        self._record_debug_event(
-            prompt_name,
-            "LLM response requires repair",
-            payload_type="llm_repair",
-            worker=prompt_name,
-            temperature=temperature,
-            prompt_tokens=prompt_tokens,
-            usage=usage,
-            raw_output=raw_text,
-            parse_error=parse_error,
-        )
-
         # Repair attempt
-        repair_error = None
         repair_raw_text = ""
         repair_usage: dict[str, int] = {}
         try:
-            repair_prompt = self._prompt_loader.render("repair", {
-                "format_instructions": instructions,
-                "original_prompt": f"SYSTEM: {prompt_pair.system}\nHUMAN: {prompt_pair.human}",
-                "raw_output": str(raw_text),
-                "parse_error": parse_error
-            })
-            retry_invocation = self._invoke(llm, [SystemMessage(content=repair_prompt.system), HumanMessage(content=repair_prompt.human)])
+            repair_prompt = self._prompt_loader.render(
+                "repair",
+                {
+                    "format_instructions": instructions,
+                    "original_prompt": f"SYSTEM: {prompt_pair.system}\nHUMAN: {prompt_pair.human}",
+                    "raw_output": str(raw_text),
+                    "parse_error": parse_error,
+                },
+            )
+            retry_invocation = self._invoke(
+                llm,
+                [
+                    SystemMessage(content=repair_prompt.system),
+                    HumanMessage(content=repair_prompt.human),
+                ],
+            )
             repair_raw_text = retry_invocation.content
             repair_usage = retry_invocation.usage or usage
             parsed = self._try_parse(parser, repair_raw_text, schema)
             if parsed:
-                self._record_debug_event(
-                    prompt_name,
-                    "LLM repair parsed",
-                    worker=prompt_name,
-                    temperature=temperature,
-                    prompt_tokens=prompt_tokens,
-                    usage=repair_usage,
-                    raw_output=repair_raw_text,
-                    parsed_output=parsed.model_dump(mode="json"),
-                    repair_attempted=True,
-                    parse_error=parse_error,
-                )
                 return parsed, repair_usage
-        except (json.JSONDecodeError, ValidationError, ValueError, KeyError, OSError) as exc:
-            repair_error = str(exc)
-
-        self._record_debug_event(
-            prompt_name,
-            "LLM repair failed",
-            payload_type="llm_repair",
-            worker=prompt_name,
-            temperature=temperature,
-            prompt_tokens=prompt_tokens,
-            usage=repair_usage or usage,
-            raw_output=repair_raw_text or raw_text,
-            parse_error=parse_error,
-            repair_error=repair_error,
-        )
+        except (json.JSONDecodeError, ValidationError, ValueError, KeyError, OSError):
+            pass
 
         raise ValueError(f"Failed to parse {prompt_name} response after repair attempt. Raw: {raw_text[:200]}...")
 
     def _try_parse(self, parser: PydanticOutputParser, text: str, schema: type[TModel]) -> TModel | None:
         try:
-            return parser.parse(text)
+            return cast(TModel, parser.parse(text))
         except (json.JSONDecodeError, ValidationError, ValueError, KeyError):
             pass
 
@@ -257,27 +196,51 @@ class LLMWorkers:
 
         return None
 
+    @traceable(name="planner-llm")
     def plan_research(self, context: NodeContext) -> PlannerPayload:
-        payload, _ = self._parse_response("planner", context.model_dump(), PlannerPayload, self._config.model.temperature_planner)
+        payload, _ = self._parse_response(
+            "planner",
+            context.model_dump(),
+            PlannerPayload,
+            self._config.model.temperature_planner,
+        )
         return payload
 
+    @traceable(name="planner-llm-with-usage")
     def plan_research_with_usage(self, context: NodeContext) -> tuple[PlannerPayload, dict[str, int]]:
-        return self._parse_response("planner", context.model_dump(), PlannerPayload, self._config.model.temperature_planner)
+        return self._parse_response(
+            "planner",
+            context.model_dump(),
+            PlannerPayload,
+            self._config.model.temperature_planner,
+        )
 
+    @traceable(name="extractor-llm")
     def extract_evidence(self, context: NodeContext) -> EvidencePayload:
         vars = context.model_dump()
         vars["evidentiary"] = "\n".join(f"- {e.claim} | {e.source_title}" for e in context.evidentiary)
         try:
-            payload, _ = self._parse_response("extractor", vars, EvidencePayload, self._config.model.temperature_extractor)
+            payload, _ = self._parse_response(
+                "extractor",
+                vars,
+                EvidencePayload,
+                self._config.model.temperature_extractor,
+            )
             return payload
         except (json.JSONDecodeError, ValidationError, ValueError):
             return EvidencePayload()
 
+    @traceable(name="extractor-llm-with-usage")
     def extract_evidence_with_usage(self, context: NodeContext) -> tuple[EvidencePayload, dict[str, int]]:
         vars = context.model_dump()
         vars["evidentiary"] = "\n".join(f"- {e.claim} | {e.source_title}" for e in context.evidentiary)
         try:
-            return self._parse_response("extractor", vars, EvidencePayload, self._config.model.temperature_extractor)
+            return self._parse_response(
+                "extractor",
+                vars,
+                EvidencePayload,
+                self._config.model.temperature_extractor,
+            )
         except (json.JSONDecodeError, ValidationError, ValueError):
             return EvidencePayload(), {}
 
@@ -285,6 +248,7 @@ class LLMWorkers:
     def _extract_domain_label(url: str) -> str:
         return re.sub(r"^www\.", "", url.split("/")[2])
 
+    @traceable(name="evaluator-llm")
     def evaluate_coverage(self, context: NodeContext) -> CoveragePayload:
         vars = context.model_dump()
         _domain = self._extract_domain_label
@@ -293,11 +257,17 @@ class LLMWorkers:
             for e in context.evidentiary
         )
         try:
-            payload, _ = self._parse_response("evaluator", vars, CoveragePayload, self._config.model.temperature_evaluator)
+            payload, _ = self._parse_response(
+                "evaluator",
+                vars,
+                CoveragePayload,
+                self._config.model.temperature_evaluator,
+            )
             return payload
         except (json.JSONDecodeError, ValidationError, ValueError):
             return CoveragePayload()
 
+    @traceable(name="evaluator-llm-with-usage")
     def evaluate_coverage_with_usage(self, context: NodeContext) -> tuple[CoveragePayload, dict[str, int]]:
         vars = context.model_dump()
         _domain = self._extract_domain_label
@@ -306,7 +276,12 @@ class LLMWorkers:
             for e in context.evidentiary
         )
         try:
-            return self._parse_response("evaluator", vars, CoveragePayload, self._config.model.temperature_evaluator)
+            return self._parse_response(
+                "evaluator",
+                vars,
+                CoveragePayload,
+                self._config.model.temperature_evaluator,
+            )
         except (json.JSONDecodeError, ValidationError, ValueError):
             return CoveragePayload(), {}
 
@@ -314,11 +289,22 @@ class LLMWorkers:
         report, _ = self.synthesize_report_with_usage(context, query)
         return report
 
+    @traceable(name="synthesizer-llm-with-usage")
     def synthesize_report_with_usage(self, context: NodeContext, query: str) -> tuple[FinalReport, dict[str, int]]:
         vars = context.model_dump()
-        vars.update({"query": query, "evidentiary": "\n".join(f"- {e.id}: {e.claim}" for e in context.evidentiary)})
+        vars.update({
+            "query": query,
+            "evidentiary": "\n".join(f"- {e.id}: {e.claim}" for e in context.evidentiary),
+        })
 
-        prompt = self._prompt_loader.render("synthesizer", {**vars, "language": self._config.runtime.language, "format_instructions": ""})
+        prompt = self._prompt_loader.render(
+            "synthesizer",
+            {
+                **vars,
+                "language": self._config.runtime.language,
+                "format_instructions": "",
+            },
+        )
         llm = self._llm(temperature=self._config.model.temperature_synthesizer, json_format=False)
         usage: dict[str, int] = {}
 

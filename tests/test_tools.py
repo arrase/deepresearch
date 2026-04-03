@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from deepresearch.config import ResearchConfig
 from deepresearch.tools import DuckDuckGoSearchClient
 
@@ -13,21 +15,26 @@ class FakeResponse:
         return None
 
 
-def test_duckduckgo_lite_parser_extracts_candidates() -> None:
+def test_duckduckgo_lite_parser_extracts_candidates(monkeypatch) -> None:
     config = ResearchConfig()
     client = DuckDuckGoSearchClient(config.search)
     sample_html = """
     <html>
       <body>
         <table>
-          <tr><td><a class="result-link" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Freport">Example result</a></td></tr>
+          <tr><td><a class="result-link"
+            href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Freport">Example result</a></td></tr>
           <tr><td>This is the snippet for the example result.</td></tr>
           <tr><td>example.com/report</td></tr>
         </table>
       </body>
     </html>
     """
-    client._client.get = lambda *args, **kwargs: FakeResponse(sample_html)
+    monkeypatch.setattr(
+        client._client,
+        "get",
+        lambda *args, **kwargs: FakeResponse(sample_html),
+    )
 
     results = client.search("example")
 
@@ -37,7 +44,7 @@ def test_duckduckgo_lite_parser_extracts_candidates() -> None:
     assert "snippet" in results[0].snippet
 
 
-def test_duckduckgo_lite_retries_with_normalized_query_after_anomaly() -> None:
+def test_duckduckgo_lite_retries_with_normalized_query_after_anomaly(monkeypatch) -> None:
     config = ResearchConfig()
     client = DuckDuckGoSearchClient(config.search)
     anomaly_html = "<html><body><form id='challenge-form' action='//duckduckgo.com/anomaly.js'></form></body></html>"
@@ -45,7 +52,8 @@ def test_duckduckgo_lite_retries_with_normalized_query_after_anomaly() -> None:
     <html>
       <body>
         <table>
-          <tr><td><a class="result-link" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fstable">Stable result</a></td></tr>
+          <tr><td><a class="result-link"
+            href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fstable">Stable result</a></td></tr>
           <tr><td>Stable snippet.</td></tr>
           <tr><td>example.com/stable</td></tr>
         </table>
@@ -54,13 +62,13 @@ def test_duckduckgo_lite_retries_with_normalized_query_after_anomaly() -> None:
     """
     calls: list[str] = []
 
-    def fake_get(*args, **kwargs):
+    def fake_get(*args: Any, **kwargs: Any) -> FakeResponse:
         calls.append(kwargs["params"]["q"])
         if len(calls) == 1:
             return FakeResponse(anomaly_html, status_code=202)
         return FakeResponse(sample_html)
 
-    client._client.get = fake_get
+    monkeypatch.setattr(client._client, "get", fake_get)
 
     results = client.search("¿Qué modelos de ingresos actuales y proyectados sostienen el negocio?")
 

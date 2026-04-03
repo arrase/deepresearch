@@ -2,22 +2,22 @@ from deepresearch.config import ResearchConfig
 from deepresearch.context_manager import ContextManager
 from deepresearch.core.payloads import CoveragePayload, EvidenceDraft, EvidencePayload, PlannerPayload
 from deepresearch.graph import build_graph
-from deepresearch.nodes import ResearchRuntime
 from deepresearch.nodes.evaluator import EvaluatorNode
 from deepresearch.nodes.extractor import ExtractorNode
 from deepresearch.nodes.source_manager import SourceManagerNode
+from deepresearch.runtime import ResearchRuntime
 from deepresearch.state import (
     BrowserPageStatus,
     ConfidenceLevel,
     FinalReport,
     Gap,
+    ReportSource,
     SearchCandidate,
     SearchIntent,
     SourceVisit,
     Subquery,
     build_initial_state,
 )
-from deepresearch.telemetry import TelemetryRecorder
 
 
 class FakeSearchClient:
@@ -41,7 +41,6 @@ class FakeBrowser:
             title="Example report",
             content="# Example report\nFusion demand is rising in 2026.",
             excerpt="Fusion demand is rising in 2026.",
-            exit_code=0,
         )
 
 
@@ -125,7 +124,13 @@ class FakeLLMWorkers:
             confidence=ConfidenceLevel.HIGH,
             reservations=[],
             open_gaps=[],
-            cited_sources=[{"url": "https://example.com/report", "title": "Example report", "evidence_ids": ["ev1"]}],
+            cited_sources=[
+                ReportSource(
+                    url="https://example.com/report",
+                    title="Example report",
+                    evidence_ids=["ev1"],
+                )
+            ],
             evidence_ids=["ev1"],
             markdown_report="# Research Report\n\nFusion demand is rising.",
         )
@@ -173,7 +178,6 @@ def test_graph_runs_end_to_end_with_fakes() -> None:
         llm_workers=FakeLLMWorkers(),
         browser=FakeBrowser(),
         search_client=FakeSearchClient(),
-        telemetry=TelemetryRecorder(),
     )
     graph = build_graph(runtime)
     initial_state = build_initial_state(
@@ -201,7 +205,6 @@ def test_graph_routes_directly_to_evaluator_when_no_candidate_exists() -> None:
         llm_workers=InsufficientLLMWorkers(),
         browser=FailIfCalledBrowser(),
         search_client=EmptySearchClient(),
-        telemetry=TelemetryRecorder(),
     )
     graph = build_graph(runtime)
     initial_state = build_initial_state(
@@ -229,7 +232,6 @@ def test_graph_stops_when_final_synthesis_context_is_full() -> None:
         llm_workers=FinalContextFullLLMWorkers(),
         browser=FakeBrowser(),
         search_client=FakeSearchClient(),
-        telemetry=TelemetryRecorder(),
     )
     graph = build_graph(runtime)
     initial_state = build_initial_state(
@@ -257,7 +259,6 @@ def test_graph_stops_when_research_is_exhausted_without_progress() -> None:
         llm_workers=ExhaustedLLMWorkers(),
         browser=FakeBrowser(),
         search_client=FakeSearchClient(),
-        telemetry=TelemetryRecorder(),
     )
     graph = build_graph(runtime)
     initial_state = build_initial_state(
@@ -273,43 +274,6 @@ def test_graph_stops_when_research_is_exhausted_without_progress() -> None:
     assert result["cycles_without_new_evidence"] < 10
 
 
-def test_graph_verbosity_zero_suppresses_telemetry_output() -> None:
-    config = ResearchConfig()
-    config.runtime.verbosity = 0
-    runtime = ResearchRuntime(
-        config=config,
-        context_manager=ContextManager(config),
-        llm_workers=FakeLLMWorkers(),
-        browser=FakeBrowser(),
-        search_client=FakeSearchClient(),
-        telemetry=TelemetryRecorder(verbosity=0),
-    )
-    graph = build_graph(runtime)
-
-    result = graph.invoke(build_initial_state("What is happening to fusion demand?", max_iterations=4))
-
-    assert result["telemetry"] == []
-
-
-def test_graph_verbosity_three_includes_dossier_and_web_debug_events() -> None:
-    config = ResearchConfig()
-    config.runtime.verbosity = 3
-    runtime = ResearchRuntime(
-        config=config,
-        context_manager=ContextManager(config),
-        llm_workers=FakeLLMWorkers(),
-        browser=FakeBrowser(),
-        search_client=FakeSearchClient(),
-        telemetry=TelemetryRecorder(verbosity=3),
-    )
-    graph = build_graph(runtime)
-
-    result = graph.invoke(build_initial_state("What is happening to fusion demand?", max_iterations=4))
-
-    assert any(event.payload_type == "web_page" and "page" in event.payload for event in result["telemetry"])
-    assert any(event.payload_type == "dossier_snapshot" for event in result["telemetry"])
-
-
 def test_source_manager_prioritizes_gap_queries_over_existing_queue() -> None:
     config = ResearchConfig()
     search_client = RecordingSearchClient()
@@ -319,7 +283,6 @@ def test_source_manager_prioritizes_gap_queries_over_existing_queue() -> None:
         llm_workers=FakeLLMWorkers(),
         browser=FakeBrowser(),
         search_client=search_client,
-        telemetry=TelemetryRecorder(),
     )
     node = SourceManagerNode(runtime)
     state = build_initial_state("Lightpanda vs Playwright", max_iterations=4)
@@ -328,7 +291,12 @@ def test_source_manager_prioritizes_gap_queries_over_existing_queue() -> None:
         Subquery(id="sq_2", question="What is Playwright?", rationale="r", search_terms=["playwright"]),
     ]
     state["search_queue"] = [
-        SearchCandidate(url="https://example.com/old", title="Old queue item", domain="example.com", subquery_ids=["sq_1"])
+        SearchCandidate(
+            url="https://example.com/old",
+            title="Old queue item",
+            domain="example.com",
+            subquery_ids=["sq_1"],
+        )
     ]
     state["open_gaps"] = [
         Gap(subquery_id="sq_2", description="Need Playwright docs", suggested_queries=["playwright framework docs"])
@@ -350,13 +318,17 @@ def test_extractor_assigns_evidence_to_candidate_subquery_not_first_active() -> 
         llm_workers=FakeLLMWorkers(),
         browser=FakeBrowser(),
         search_client=FakeSearchClient(),
-        telemetry=TelemetryRecorder(),
     )
     node = ExtractorNode(runtime)
     state = build_initial_state("Lightpanda vs Playwright", max_iterations=4)
     state["active_subqueries"] = [
         Subquery(id="sq_1", question="What is Lightpanda?", rationale="r", search_terms=["lightpanda framework"]),
-        Subquery(id="sq_2", question="What is Playwright?", rationale="r", search_terms=["playwright testing framework"]),
+        Subquery(
+            id="sq_2",
+            question="What is Playwright?",
+            rationale="r",
+            search_terms=["playwright testing framework"],
+        ),
     ]
     state["current_candidate"] = SearchCandidate(
         url="https://example.com/playwright-guide",
@@ -388,7 +360,6 @@ def test_evaluator_counts_zero_evidence_cycle_as_stagnation() -> None:
         llm_workers=FakeLLMWorkers(),
         browser=FakeBrowser(),
         search_client=FakeSearchClient(),
-        telemetry=TelemetryRecorder(),
     )
     node = EvaluatorNode(runtime)
     state = build_initial_state("Lightpanda vs Playwright", max_iterations=4)
@@ -400,4 +371,3 @@ def test_evaluator_counts_zero_evidence_cycle_as_stagnation() -> None:
 
     assert progress["progress_score"] == config.runtime.weight_useful_source
     assert progress["stagnation_cycles"] == 2
-

@@ -4,23 +4,24 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
+import logging
 from pathlib import Path
 
 from .config import ResearchConfig
 from .context_manager import ContextManager
 from .core.llm import LLMWorkers
 from .graph import build_graph
+from .observability import configure_logging, langsmith_tracing
 from .output_utils import generate_pdf
-from .runtime import ResearchRuntime
+from .runtime import ResearchRuntime, SearchClientLike
 from .state import build_initial_state
-from .telemetry import TelemetryRecorder
 from .tools import DuckDuckGoSearchClient, LightpandaDockerManager, TavilySearchClient
 
+logger = logging.getLogger(__name__)
 
-def build_runtime(config: ResearchConfig, verbosity: int | None = None) -> ResearchRuntime:
-    active_verbosity = config.runtime.verbosity if verbosity is None else verbosity
-    telemetry = TelemetryRecorder(verbosity=active_verbosity)
+
+def build_runtime(config: ResearchConfig) -> ResearchRuntime:
+    search_client: SearchClientLike
     if config.search.backend == "tavily":
         search_client = TavilySearchClient(config.search)
     else:
@@ -29,10 +30,9 @@ def build_runtime(config: ResearchConfig, verbosity: int | None = None) -> Resea
     return ResearchRuntime(
         config=config,
         context_manager=ContextManager(config),
-        llm_workers=LLMWorkers(config, telemetry=telemetry),
+        llm_workers=LLMWorkers(config),
         browser=LightpandaDockerManager(config.browser),
         search_client=search_client,
-        telemetry=telemetry,
     )
 
 
@@ -54,7 +54,11 @@ def parse_args() -> argparse.Namespace:
         type=int,
         choices=range(0, 4),
         default=None,
-        help="Debug verbosity level: 0 disables telemetry, 1 keeps current progress logs, 2 adds LLM orchestration outputs, 3 adds dossier snapshots and per-web processing details",
+        help=(
+            "Logging verbosity level: 0 disables progress logs, "
+            "1 shows stage progress, 2 adds decision summaries, "
+            "3 adds detailed local diagnostics"
+        ),
     )
     parser.add_argument("--discord", action="store_true", help="Send the final report to Discord")
 
@@ -76,17 +80,17 @@ def cli() -> int:
     args = parse_args()
     config = ResearchConfig.load(config_root=args.config_root)
     apply_cli_overrides(config, args)
+    configure_logging(config.runtime.verbosity)
 
     runtime = build_runtime(config)
     if config.runtime.verbosity >= 1:
-        print(
-            (
-                f"Starting deep research with model={config.model.model_name}, "
-                f"num_ctx={config.model.num_ctx}, max_iterations={config.runtime.max_iterations}, "
-                f"verbosity={config.runtime.verbosity}, config_root={config.config_root}"
-            ),
-            file=sys.stderr,
-            flush=True,
+        logger.info(
+            "Starting deep research with model=%s, num_ctx=%s, max_iterations=%s, verbosity=%s, config_root=%s",
+            config.model.model_name,
+            config.model.num_ctx,
+            config.runtime.max_iterations,
+            config.runtime.verbosity,
+            config.config_root,
         )
 
     initial_state = build_initial_state(
@@ -94,7 +98,20 @@ def cli() -> int:
         max_iterations=config.runtime.max_iterations,
     )
     graph = build_graph(runtime)
-    final_state = graph.invoke(initial_state)
+    trace_metadata = {
+        "model_name": config.model.model_name,
+        "search_backend": config.search.backend,
+        "config_root": str(config.config_root),
+    }
+    with langsmith_tracing(config, metadata=trace_metadata):
+        final_state = graph.invoke(
+            initial_state,
+            config={
+                "run_name": "deepresearch",
+                "tags": ["cli"],
+                "metadata": trace_metadata,
+            },
+        )
     final_report = final_state.get("final_report")
 
     if final_report is None:
@@ -111,31 +128,31 @@ def cli() -> int:
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(final_report.markdown_report, encoding="utf-8")
         if config.runtime.verbosity >= 1:
-            print(f"Final markdown report generated and saved to: {output_path}", file=sys.stderr, flush=True)
+            logger.info("Final markdown report generated and saved to: %s", output_path)
     elif args.pdf:
         output_path = Path(args.pdf)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         generate_pdf(final_report.markdown_report, output_path)
         if config.runtime.verbosity >= 1:
-            print(f"Final PDF report generated and saved to: {output_path}", file=sys.stderr, flush=True)
+            logger.info("Final PDF report generated and saved to: %s", output_path)
     elif not args.discord:
         output_path = Path("report.md")
         output_path.write_text(final_report.markdown_report, encoding="utf-8")
         if config.runtime.verbosity >= 1:
-            print(f"Final markdown report generated and saved to: {output_path}", file=sys.stderr, flush=True)
+            logger.info("Final markdown report generated and saved to: %s", output_path)
 
     if args.discord:
         import asyncio
 
         from .outputs.discord import send_discord_report
 
-        print("Sending report to Discord...", file=sys.stderr, flush=True)
+        logger.info("Sending report to Discord...")
         success = asyncio.run(send_discord_report(config.discord, final_report))
 
         if success:
-            print("Report sent to Discord successfully.", file=sys.stderr, flush=True)
+            logger.info("Report sent to Discord successfully.")
         else:
-            print("Failed to send report to Discord. Check your configuration.", file=sys.stderr, flush=True)
+            logger.error("Failed to send report to Discord. Check your configuration.")
 
     print(final_report.executive_answer)
     return 0

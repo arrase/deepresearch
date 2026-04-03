@@ -11,7 +11,7 @@ import tomllib
 from importlib import resources
 from pathlib import Path
 
-from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, model_validator
 
 DEFAULT_CONFIG_ENV_VAR = "DEEPRESEARCH_CONFIG_ROOT"
 DEFAULT_CONFIG_FILENAME = "config.toml"
@@ -160,6 +160,24 @@ class RuntimeConfig(BaseModel):
     weight_resolved_subquery: int = Field(default=3, ge=0)
 
 
+class LangSmithConfig(BaseModel):
+    """LangSmith tracing settings."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = Field(default=False)
+    tracing: bool = Field(default=True)
+    endpoint: str | None = Field(default=None)
+    api_key: str | None = Field(default=None)
+    project: str = Field(default="DeepResearch")
+
+    @model_validator(mode="after")
+    def validate_enabled_credentials(self) -> LangSmithConfig:
+        if self.enabled and not self.api_key:
+            raise ValueError("langsmith.api_key is required when langsmith.enabled is true")
+        return self
+
+
 class ResearchConfig(BaseModel):
     """Root configuration consumed by the research runtime."""
 
@@ -170,6 +188,7 @@ class ResearchConfig(BaseModel):
     search: SearchConfig = Field(default_factory=SearchConfig)
     discord: DiscordConfig = Field(default_factory=DiscordConfig)
     runtime: RuntimeConfig = Field(default_factory=RuntimeConfig)
+    langsmith: LangSmithConfig = Field(default_factory=LangSmithConfig)
 
     _config_root: Path = PrivateAttr(default_factory=default_config_root)
     _config_file_path: Path = PrivateAttr(default_factory=lambda: default_config_root() / DEFAULT_CONFIG_FILENAME)
