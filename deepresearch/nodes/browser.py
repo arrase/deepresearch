@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from langsmith import traceable
+
 from ..core.utils import summarize_source_visit
 from ..state import BrowserPageStatus, DiscardedSource, ResearchState, SourceDiscardReason, SourceVisit
-from .base import record_telemetry
+from .base import log_node_activity, log_runtime_event
 
 if TYPE_CHECKING:
     from ..runtime import ResearchRuntime
@@ -16,7 +18,8 @@ class BrowserNode:
     def __init__(self, runtime: ResearchRuntime) -> None:
         self._runtime = runtime
 
-    @record_telemetry("browser", "Navigating to: {query}")
+    @traceable(name="browser-node")
+    @log_node_activity("browser", "Navigating to: {query}")
     def __call__(self, state: ResearchState) -> dict:
         candidate = state.get("current_candidate")
         if candidate is None:
@@ -25,15 +28,13 @@ class BrowserNode:
                 status=BrowserPageStatus.TERMINAL_ERROR,
                 error="No actionable candidate is available",
             )
-            event = self._runtime.telemetry.record(
-                "browser",
-                "Skipping navigation because there is no current candidate",
+            log_runtime_event(
+                self._runtime,
+                "[browser] Skipping navigation because there is no current candidate",
                 verbosity=1,
-                payload_type="web_page",
             )
             return {
                 "current_browser_result": result,
-                "telemetry": self._runtime.telemetry.extend(state["telemetry"], event),
             }
 
         result = self._runtime.browser.fetch(candidate.url)
@@ -62,25 +63,27 @@ class BrowserNode:
                 )
             )
 
-        event = self._runtime.telemetry.record(
-            "browser",
-            "Navigation completed",
+        log_runtime_event(
+            self._runtime,
+            "[browser] Navigation completed",
             verbosity=1,
-            payload_type="web_page",
             url=candidate.url,
             status=result.status.value,
         )
-        detail_event = self._runtime.telemetry.record(
-            "browser",
-            "Processed web page",
+        log_runtime_event(
+            self._runtime,
+            "[browser] Processed web page",
             verbosity=3,
-            payload_type="web_page",
             page=summarize_source_visit(result, include_content_preview=True),
         )
         return {
             "visited_urls": visited,
             "discarded_sources": discarded_sources,
             "current_browser_result": result,
-            "useful_sources_count": state["useful_sources_count"] + (1 if result.status in {BrowserPageStatus.USEFUL, BrowserPageStatus.PARTIAL} else 0),
-            "telemetry": self._runtime.telemetry.extend(state["telemetry"], event, detail_event),
+            "useful_sources_count": state["useful_sources_count"]
+            + (
+                1
+                if result.status in {BrowserPageStatus.USEFUL, BrowserPageStatus.PARTIAL}
+                else 0
+            ),
         }

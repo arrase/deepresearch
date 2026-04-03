@@ -47,7 +47,12 @@ async def send_discord_report(config: DiscordConfig, report: FinalReport) -> boo
         # Decide whether to send as a message or as a file
         # Discord message limit is 2000 characters. We'll use 1800 to be safe with the intro.
         if len(full_report) < 1800:
-            content = f"🚀 **Research Report Generated**\n**Query:** {report.query}\n**Confidence:** {report.confidence.value.upper()}\n\n{full_report}"
+            content = (
+                "🚀 **Research Report Generated**\n"
+                f"**Query:** {report.query}\n"
+                f"**Confidence:** {report.confidence.value.upper()}\n\n"
+                f"{full_report}"
+            )
             try:
                 resp = await client.post(
                     f"https://discord.com/api/v10/channels/{channel_id}/messages",

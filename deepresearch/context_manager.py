@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import Counter, defaultdict
+from collections.abc import Mapping
 
 from pydantic import BaseModel, Field
 
@@ -172,25 +173,43 @@ class ContextManager:
 
     def planner_context(self, state: ResearchState) -> NodeContext:
         has = bool(state["active_subqueries"] or state["resolved_subqueries"])
-        dossier = "\n".join(f"Subquery {sid}: {sum}" for sid, sum in state["working_dossier"].subquery_summaries.items())
+        dossier = "\n".join(
+            f"Subquery {sid}: {summary}"
+            for sid, summary in state["working_dossier"].subquery_summaries.items()
+        )
         return NodeContext(
-            query=state["query"], has_subqueries=has,
+            query=state["query"],
+            has_subqueries=has,
             coverage_summary=self._render_coverage_summary(state),
             source_balance_summary=self._render_source_balance_summary(state),
             active_subqueries=self._render_sq(state["active_subqueries"]),
             resolved_subqueries=self._render_sq(state["resolved_subqueries"]),
             open_gaps=self._render_gaps(state["open_gaps"]),
-            dossier_context=dossier
+            dossier_context=dossier,
         )
 
     def extractor_context(self, state: ResearchState, targets: list[str], local_source: str) -> NodeContext:
         budget_tokens = max(1, self._available_prompt_budget() // 2)
-        evidence = select_evidence_for_context(state["atomic_evidence"], subquery_ids=targets, budget_tokens=budget_tokens)
-        return NodeContext(query=state["query"], active_subqueries=self._render_sq(state["active_subqueries"]), open_gaps=self._render_gaps(state["open_gaps"]), evidentiary=evidence, local_source=local_source)
+        evidence = select_evidence_for_context(
+            state["atomic_evidence"],
+            subquery_ids=targets,
+            budget_tokens=budget_tokens,
+        )
+        return NodeContext(
+            query=state["query"],
+            active_subqueries=self._render_sq(state["active_subqueries"]),
+            open_gaps=self._render_gaps(state["open_gaps"]),
+            evidentiary=evidence,
+            local_source=local_source,
+        )
 
     def evaluator_context(self, state: ResearchState) -> NodeContext:
         budget_tokens = max(1, self._available_prompt_budget() // 2)
-        evidence = select_evidence_for_context(state["atomic_evidence"], subquery_ids=[s.id for s in state["active_subqueries"]], budget_tokens=budget_tokens)
+        evidence = select_evidence_for_context(
+            state["atomic_evidence"],
+            subquery_ids=[s.id for s in state["active_subqueries"]],
+            budget_tokens=budget_tokens,
+        )
         return NodeContext(
             query=state["query"],
             coverage_summary=self._render_coverage_summary(state),
@@ -206,7 +225,7 @@ class ContextManager:
         evidence = select_evidence_for_context(
             state["atomic_evidence"],
             subquery_ids=[s.id for s in state["resolved_subqueries"] or state["active_subqueries"]],
-            budget_tokens=int(budget["evidence_budget_tokens"]),
+            budget_tokens=_budget_int(budget, "evidence_budget_tokens", default=0),
         )
         dossier = self._build_synthesizer_dossier(state)
         return NodeContext(query=state["query"], dossier_context=dossier, evidentiary=evidence)
@@ -238,3 +257,13 @@ class ContextManager:
                 "useful_sources_count": state["useful_sources_count"],
             },
         }
+
+
+def _budget_int(
+    budget: Mapping[str, int | bool | str | None],
+    key: str,
+    *,
+    default: int,
+) -> int:
+    value = budget.get(key)
+    return int(value) if isinstance(value, (int, str)) else default

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import re
 from datetime import UTC, datetime
-from enum import Enum
+from enum import StrEnum
 from typing import Any, Literal, NotRequired, TypedDict
 from uuid import uuid4
 
@@ -20,7 +20,7 @@ def utc_now_iso() -> str:
     return datetime.now(UTC).isoformat()
 
 
-class BrowserPageStatus(str, Enum):
+class BrowserPageStatus(StrEnum):
     USEFUL = "useful"
     PARTIAL = "partial"
     BLOCKED = "blocked"
@@ -29,7 +29,7 @@ class BrowserPageStatus(str, Enum):
     TERMINAL_ERROR = "terminal_error"
 
 
-class SourceDiscardReason(str, Enum):
+class SourceDiscardReason(StrEnum):
     DUPLICATE_URL = "duplicate_url"
     ALREADY_VISITED = "already_visited"
     BLOCKED = "blocked"
@@ -40,14 +40,14 @@ class SourceDiscardReason(str, Enum):
     IRRELEVANT = "irrelevant"
 
 
-class GapSeverity(str, Enum):
+class GapSeverity(StrEnum):
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
     CRITICAL = "critical"
 
 
-class ConfidenceLevel(str, Enum):
+class ConfidenceLevel(StrEnum):
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
@@ -214,15 +214,6 @@ class FinalReport(BaseModel):
     generated_at: str = Field(default_factory=utc_now_iso)
 
 
-class TelemetryEvent(BaseModel):
-    timestamp: str = Field(default_factory=utc_now_iso)
-    stage: str
-    message: str
-    verbosity: int = Field(default=1, ge=0, le=3)
-    payload_type: str = "generic"
-    payload: dict[str, Any] = Field(default_factory=dict)
-
-
 class ResearchState(TypedDict):
     query: str
     active_subqueries: list[Subquery]
@@ -248,7 +239,6 @@ class ResearchState(TypedDict):
     progress_score: int
     useful_sources_count: int
     urls_visited_since_eval: int
-    telemetry: list[TelemetryEvent]
     stop_reason: str | None
     technical_reason: str | None
     llm_usage: NotRequired[dict[str, dict[str, int]]]
@@ -288,7 +278,6 @@ def build_initial_state(
         "progress_score": 0,
         "useful_sources_count": 0,
         "urls_visited_since_eval": 0,
-        "telemetry": [],
         "stop_reason": None,
         "technical_reason": None,
         "llm_usage": {},

@@ -60,7 +60,8 @@ class DuckDuckGoSearchClient:
             if anchor is None:
                 row_index += 1
                 continue
-            raw_href = anchor.get("href", "").strip()
+            href_attr = anchor.get("href")
+            raw_href = href_attr.strip() if isinstance(href_attr, str) else ""
             url = self._resolve_result_url(raw_href)
             title = anchor.get_text(" ", strip=True)
             snippet = ""

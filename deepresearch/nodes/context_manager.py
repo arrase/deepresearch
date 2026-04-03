@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
+
+from langsmith import traceable
 
 from ..core.utils import deduplicate_evidence, summarize_evidence, update_working_dossier
 from ..state import DiscardedSource, ResearchState, SourceDiscardReason
-from .base import record_telemetry
+from .base import log_node_activity, log_runtime_event
 
 if TYPE_CHECKING:
     from ..runtime import ResearchRuntime
@@ -16,7 +18,8 @@ class ContextManagerNode:
     def __init__(self, runtime: ResearchRuntime) -> None:
         self._runtime = runtime
 
-    @record_telemetry("context_manager", "Integrating evidence for: {query}")
+    @traceable(name="context-manager-node")
+    @log_node_activity("context_manager", "Integrating evidence for: {query}")
     def __call__(self, state: ResearchState) -> dict:
         browser_result = state.get("current_browser_result")
         latest = state.get("latest_evidence", [])
@@ -45,15 +48,16 @@ class ContextManagerNode:
             "working_dossier": dossier,
             "discarded_sources": discarded,
         }
-        event = self._runtime.telemetry.record("context_manager", "Dossier updated", verbosity=1, payload_type="dossier", count=len(accepted))
-        detail_event = self._runtime.telemetry.record(
-            "context_manager",
-            "Integrated accepted evidence into dossier",
+        log_runtime_event(self._runtime, "[context_manager] Dossier updated", verbosity=1, count=len(accepted))
+        log_runtime_event(
+            self._runtime,
+            "[context_manager] Integrated accepted evidence into dossier",
             verbosity=3,
-            payload_type="dossier_snapshot",
             accepted_evidence=summarize_evidence(accepted),
             rejected_count=max(0, len(latest) - len(accepted)),
-            snapshot=self._runtime.context_manager.debug_state_snapshot(updated_state),
+            snapshot=self._runtime.context_manager.debug_state_snapshot(
+                cast(ResearchState, updated_state)
+            ),
         )
         return {
             "atomic_evidence": updated_evidence,
@@ -63,7 +67,11 @@ class ContextManagerNode:
             "urls_visited_since_eval": state.get("urls_visited_since_eval", 0) + 1,
             "progress_score": (
                 len(accepted) * self._runtime.config.runtime.weight_new_evidence
-                + (1 if browser_result and browser_result.status.value in {"useful", "partial"} else 0) * self._runtime.config.runtime.weight_useful_source
+                + (
+                    1
+                    if browser_result and browser_result.status.value in {"useful", "partial"}
+                    else 0
+                )
+                * self._runtime.config.runtime.weight_useful_source
             ),
-            "telemetry": self._runtime.telemetry.extend(state["telemetry"], event, detail_event),
         }

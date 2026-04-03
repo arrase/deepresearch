@@ -54,15 +54,31 @@ def test_synthesis_budget_marks_final_context_as_full_when_evidence_overflows() 
     budget = manager.synthesis_budget(state)
 
     assert budget["final_context_full"] is True
-    assert int(budget["candidate_evidence_count"]) >= int(budget["selected_evidence_count"])
+    candidate_count = budget["candidate_evidence_count"]
+    selected_count = budget["selected_evidence_count"]
+    assert isinstance(candidate_count, int)
+    assert isinstance(selected_count, int)
+    assert candidate_count >= selected_count
 
 
 def test_planner_context_surfaces_coverage_and_source_balance_signals() -> None:
     config = ResearchConfig()
     manager = ContextManager(config)
     state = build_initial_state("How should I evaluate a new browser automation tool?", max_iterations=4)
-    sq_1 = Subquery(id="sq_1", question="What capabilities does it provide?", rationale="r", search_terms=["capabilities"], evidence_target=2)
-    sq_2 = Subquery(id="sq_2", question="What are the limitations and trade-offs?", rationale="r", search_terms=["limitations"], evidence_target=2)
+    sq_1 = Subquery(
+        id="sq_1",
+        question="What capabilities does it provide?",
+        rationale="r",
+        search_terms=["capabilities"],
+        evidence_target=2,
+    )
+    sq_2 = Subquery(
+        id="sq_2",
+        question="What are the limitations and trade-offs?",
+        rationale="r",
+        search_terms=["limitations"],
+        evidence_target=2,
+    )
     state["active_subqueries"] = [sq_1, sq_2]
     state["atomic_evidence"] = [
         AtomicEvidence(
