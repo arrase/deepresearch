@@ -61,9 +61,11 @@ def test_loaded_config_uses_runtime_synthesis_budget_settings(tmp_path) -> None:
     assert config.reporter.output_reserve_ratio == 0.20
     assert config.reporter.prompt_margin_tokens == 512
     assert config.runtime.max_consecutive_technical_failures == 3
-    assert config.runtime.max_cycles_without_new_evidence == 2
-    assert config.runtime.max_cycles_without_useful_sources == 2
-    assert config.runtime.search_batch_size == 1
+    assert config.runtime.max_cycles_without_new_evidence == 4
+    assert config.runtime.max_cycles_without_useful_sources == 4
+    assert config.runtime.search_batch_size == 3
+    assert config.runtime.min_attempts_before_exhaustion == 3
+    assert config.runtime.semantic_eval_interval == 0
     assert config.runtime.allow_dynamic_replan is True
 
 
@@ -93,10 +95,10 @@ def test_runtime_progress_thresholds_are_user_editable(tmp_path) -> None:
     config = ResearchConfig.load(config_root=config_root)
     config_text = config.config_file_path.read_text(encoding="utf-8")
     config.config_file_path.write_text(
-        config_text.replace("max_cycles_without_new_evidence = 2", "max_cycles_without_new_evidence = 7")
-        .replace("max_cycles_without_useful_sources = 2", "max_cycles_without_useful_sources = 5")
+        config_text.replace("max_cycles_without_new_evidence = 4", "max_cycles_without_new_evidence = 7")
+        .replace("max_cycles_without_useful_sources = 4", "max_cycles_without_useful_sources = 5")
         .replace("max_consecutive_technical_failures = 3", "max_consecutive_technical_failures = 5")
-        .replace("search_batch_size = 1", "search_batch_size = 2"),
+        .replace("search_batch_size = 3", "search_batch_size = 2"),
         encoding="utf-8",
     )
 

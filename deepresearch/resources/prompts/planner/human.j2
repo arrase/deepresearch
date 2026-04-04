@@ -31,10 +31,11 @@ Rules:
 - Cover only the major facets needed to answer the question well.
 - Prefer 2 to 4 non-overlapping topics.
 - Reuse the current plan when it already covers the question. Add new topics only for real uncovered gaps.
-- Use the SAME language as the research question for question, rationale, success_criteria, search_terms, search_intents, and hypotheses.
-- Keep every generated string short, concrete, and easy for a small model to follow later.
-- search_terms must be short web-search phrases, not long sentences.
-- search_intents must point to topic ids through topic_ids.
+- Use the SAME language as the research question for question, rationale, success_criteria, and hypotheses.
+- search_terms must be short web-search keyword phrases (2-5 words), not long sentences.
+- Each search_term must be DIFFERENT from the others and from the question itself. Vary angles, synonyms, and specificity.
+- search_terms should use the language most likely to return good web results. For regional or local queries, keep the original language. For technical or scientific topics, prefer English terms.
+- search_intents must point to topic ids through topic_ids. Each intent query should be a realistic web search, not a reformulation of the topic question.
 - evidence_target should usually be 1 or 2. Use 3 only when the topic clearly needs cross-source confirmation.
 - Do not duplicate a completed topic unless a gap explicitly requires a deeper follow-up.
 - If a section needs no changes, return an empty list for that section.

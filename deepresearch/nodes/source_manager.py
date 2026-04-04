@@ -11,13 +11,15 @@ from ..core.utils import (
     build_search_query,
     choose_active_topic,
     deduplicate_candidates,
+    extract_domain,
     prune_queue_by_domain,
     reformulate_queries,
     score_candidate,
     summarize_gaps,
     summarize_search_candidates,
+    validate_candidate_for_topic,
 )
-from ..state import DiscardedSource, ResearchState, SearchAttempt, TopicStatus
+from ..state import DiscardedSource, ResearchState, SearchAttempt, SourceDiscardReason, TopicStatus
 from .base import log_node_activity, log_runtime_event
 
 if TYPE_CHECKING:
@@ -73,6 +75,20 @@ class SourceManagerNode:
             query,
             max_results=self._runtime.config.search.results_per_query,
         )
+
+        # Fallback to DuckDuckGo when the primary backend returns nothing
+        if not raw_results and self._runtime.fallback_search_client is not None:
+            log_runtime_event(
+                self._runtime,
+                "[source_manager] Primary search returned no results, trying fallback",
+                verbosity=1,
+                query=query,
+            )
+            raw_results = self._runtime.fallback_search_client.search(
+                query,
+                max_results=self._runtime.config.search.results_per_query,
+            )
+
         prepared_results = [
             result.model_copy(
                 update={
@@ -86,9 +102,19 @@ class SourceManagerNode:
             [*prepared_results, *state["candidate_queue"]],
             state["visited_urls"],
         )
+        filtered: list[tuple[str, SourceDiscardReason, str]] = []
+        validated = []
+        for candidate in deduped:
+            is_valid, note = validate_candidate_for_topic(candidate, active_topic)
+            if not is_valid:
+                filtered.append((candidate.url, SourceDiscardReason.LOW_VALUE, note))
+                continue
+            validated.append(candidate)
         domains = Counter(candidate.domain for candidate in state["candidate_queue"])
+        domains.update(extract_domain(record.final_url or record.url) for record in state["visited_urls"].values())
+        domains.update(extract_domain(source.url) for source in state["discarded_sources"])
         ranked = sorted(
-            [score_candidate(candidate, active_topic, state["visited_urls"], domains) for candidate in deduped],
+            [score_candidate(candidate, active_topic, state["visited_urls"], domains) for candidate in validated],
             key=lambda item: item.score,
             reverse=True,
         )
@@ -97,7 +123,7 @@ class SourceManagerNode:
             *state["discarded_sources"],
             *[
                 DiscardedSource(url=url, reason=reason, note=note)
-                for url, reason, note in [*discarded, *pruned]
+                for url, reason, note in [*discarded, *filtered, *pruned]
             ],
         ]
         search_attempt = SearchAttempt(
@@ -168,6 +194,6 @@ class SourceManagerNode:
             "new_evidence_in_cycle": 0,
             "merged_evidence_in_cycle": 0,
             "useful_source_in_cycle": False,
-            "current_browser_result": None,
+            "browser_results": [],
             "extracted_evidence_buffer": [],
         }

@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from collections import Counter
 from collections.abc import Iterable
+from urllib.parse import urlparse
 
 from ...state import (
     BrowserPageStatus,
@@ -19,6 +21,83 @@ from ...state import (
 )
 from .url import canonicalize_url, extract_domain
 
+_LOW_VALUE_DOMAINS = {"slideshare.net"}
+_SOCIAL_DOMAINS = {
+    "facebook.com",
+    "instagram.com",
+    "linkedin.com",
+    "reddit.com",
+    "tiktok.com",
+    "x.com",
+}
+_LOW_SIGNAL_PATH_SEGMENTS = {
+    "archive",
+    "archivo",
+    "archives",
+    "category",
+    "feed",
+    "live",
+    "live-news",
+    "rss",
+    "section",
+    "seccion",
+    "slideshow",
+    "tag",
+}
+
+
+def _fold_text(text: str) -> str:
+    normalized = unicodedata.normalize("NFKD", text)
+    return normalized.encode("ascii", "ignore").decode("ascii").lower()
+
+
+def _tokenize_for_match(text: str) -> set[str]:
+    return {
+        token
+        for token in re.findall(r"[a-z0-9]+", _fold_text(text))
+        if len(token) > 2
+    }
+
+
+def _topic_terms(topic: ResearchTopic) -> set[str]:
+    return _tokenize_for_match(" ".join([topic.question, *topic.search_terms]))
+
+
+def _candidate_terms(candidate: SearchCandidate) -> tuple[set[str], set[str], set[str]]:
+    title_terms = _tokenize_for_match(candidate.title)
+    snippet_terms = _tokenize_for_match(candidate.snippet)
+    path_terms = _tokenize_for_match(candidate.url)
+    return title_terms, snippet_terms, path_terms
+
+
+def validate_candidate_for_topic(candidate: SearchCandidate, topic: ResearchTopic) -> tuple[bool, str]:
+    topic_terms = _topic_terms(topic)
+    if not topic_terms:
+        return True, ""
+
+    title_terms, snippet_terms, path_terms = _candidate_terms(candidate)
+    all_candidate_terms = title_terms | snippet_terms | path_terms
+    overlap = topic_terms & all_candidate_terms
+    overlap_ratio = len(overlap) / len(topic_terms) if topic_terms else 0.0
+    domain = _fold_text(candidate.domain or extract_domain(candidate.url))
+    path_segments = {
+        segment
+        for segment in re.split(r"[^a-z0-9]+", _fold_text(urlparse(candidate.url).path))
+        if segment
+    }
+
+    if domain in _LOW_VALUE_DOMAINS:
+        return False, f"Low-value domain for research: {domain}"
+    if domain in _SOCIAL_DOMAINS and overlap_ratio < 0.3:
+        return False, f"Social source with weak topical match: {domain}"
+    if "feed" in path_segments or "rss" in path_segments:
+        return False, "Feed or RSS endpoint without article-level context"
+    if path_segments & _LOW_SIGNAL_PATH_SEGMENTS and overlap_ratio < 0.3:
+        return False, "Listing page with weak topical overlap"
+    if overlap_ratio < 0.15:
+        return False, "No strong topical overlap with the active topic"
+    return True, ""
+
 
 def choose_active_topic(
     plan: list[ResearchTopic],
@@ -31,7 +110,7 @@ def choose_active_topic(
     return sorted(
         candidates,
         key=lambda topic: (
-            topic.status != TopicStatus.PENDING,
+            topic.status != TopicStatus.IN_PROGRESS,
             topic_attempts.get(topic.id, 0),
             -(topic_coverage[topic.id].accepted_evidence_count if topic.id in topic_coverage else 0),
             topic.priority,
@@ -56,14 +135,20 @@ def score_candidate(
     score = candidate.score
     if candidate.normalized_url in visited_urls or candidate.url in visited_urls:
         score -= 1.0
-    haystack = f"{candidate.title} {candidate.snippet}".lower()
     score += min(len(candidate.snippet) / 180.0, 1.0)
-    topic_terms = topic.search_terms or [topic.question]
-    score += sum(1 for term in topic_terms[:6] if term.lower() in haystack)
+    title_terms, snippet_terms, path_terms = _candidate_terms(candidate)
+    topic_terms = _topic_terms(topic)
+    norm = max(len(topic_terms), 1)
+    score += 1.5 * len(topic_terms & title_terms) / norm
+    score += 0.75 * len(topic_terms & snippet_terms) / norm
+    score += 1.0 * len(topic_terms & path_terms) / norm
     if domain_counts[candidate.domain] == 0:
         score += 0.3
     if candidate.url.startswith("https://"):
         score += 0.1
+    # Bonus for candidates that carry Tavily raw_content
+    if candidate.raw_content:
+        score += 0.5
     candidate.score = round(score, 4)
     return candidate
 
@@ -130,17 +215,47 @@ def classify_browser_payload(
     min_partial_chars: int,
     min_useful_chars: int,
 ) -> BrowserPageStatus:
-    if error:
-        if any(token in error.lower() for token in ("404", "not found", "dns", "timed out")):
-            return BrowserPageStatus.RECOVERABLE_ERROR
-        return BrowserPageStatus.TERMINAL_ERROR
-    if any(token in content.lower() for token in ("captcha", "access denied", "cloudflare")):
+    error_text = (error or "").lower()
+    content_text = content.lower()
+    blocked_tokens = (
+        "blocked by robots",
+        "robots.txt",
+        "access denied",
+        "captcha",
+        "cloudflare",
+        "403",
+        "forbidden",
+        "429",
+        "too many requests",
+    )
+    technical_tokens = (
+        "window.reporterror",
+        "minified react error",
+        "timed out",
+        "timeout",
+        "connection reset",
+        "dns",
+        "browser error",
+    )
+
+    if any(token in error_text for token in blocked_tokens) or any(token in content_text for token in blocked_tokens):
         return BrowserPageStatus.BLOCKED
+
+    if error_text:
+        if any(token in error_text for token in ("404", "not found", "dns", "timed out", "timeout")):
+            return BrowserPageStatus.RECOVERABLE_ERROR
+        if not content.strip() and (
+            exit_code not in (None, 0) or any(token in error_text for token in technical_tokens)
+        ):
+            return BrowserPageStatus.RECOVERABLE_ERROR
+
     chars = len(content.strip())
     if chars >= min_useful_chars:
         return BrowserPageStatus.USEFUL
     if chars >= min_partial_chars:
         return BrowserPageStatus.PARTIAL
+    if error_text:
+        return BrowserPageStatus.RECOVERABLE_ERROR
     return BrowserPageStatus.EMPTY
 
 

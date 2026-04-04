@@ -31,7 +31,7 @@ class TavilySearchClient:
             "search_depth": "advanced",
             "include_answer": False,
             "include_images": False,
-            "include_raw_content": False,
+            "include_raw_content": True,
             "max_results": target_max,
         }
         response = self._client.post("/search", json=payload)
@@ -43,6 +43,7 @@ class TavilySearchClient:
             url = result.get("url", "")
             if not url:
                 continue
+            raw_content = result.get("raw_content") or ""
             candidates.append(
                 SearchCandidate(
                     url=canonicalize_url(url),
@@ -51,6 +52,7 @@ class TavilySearchClient:
                     snippet=result.get("content", "")[:500],
                     domain=extract_domain(url),
                     score=result.get("score", 0.0),
+                    raw_content=raw_content[:self._config.max_raw_content_chars],
                 )
             )
         return candidates

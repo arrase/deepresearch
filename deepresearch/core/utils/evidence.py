@@ -19,7 +19,7 @@ from ...state import (
     TopicStatus,
     WorkingDossier,
 )
-from .text import estimate_tokens
+from .text import estimate_tokens, sanitize_source_title
 from .url import extract_domain
 
 _SIGNIFICANT_TOKEN_RE = re.compile(r"[a-z0-9]+(?:\.[a-z0-9]+)?")
@@ -107,6 +107,7 @@ def select_evidence_for_context(
 
 
 def _merge_source(existing: CuratedEvidence, draft: EvidenceDraft) -> bool:
+    source_title = sanitize_source_title(draft.source_title, draft.source_url) or "Unknown Source"
     already_present = any(
         source.url == draft.source_url and source.locator == draft.locator
         for source in existing.sources
@@ -114,7 +115,7 @@ def _merge_source(existing: CuratedEvidence, draft: EvidenceDraft) -> bool:
     if already_present:
         return False
     existing.sources.append(
-        EvidenceSourceRef(url=draft.source_url, title=draft.source_title, locator=draft.locator)
+        EvidenceSourceRef(url=draft.source_url, title=source_title, locator=draft.locator)
     )
     if draft.quotation and draft.quotation not in existing.support_quotes:
         existing.support_quotes.append(draft.quotation)
@@ -172,7 +173,13 @@ def curate_evidence(
             canonical_claim=draft.claim.strip(),
             summary=draft.summary.strip(),
             support_quotes=[draft.quotation] if draft.quotation else [],
-            sources=[EvidenceSourceRef(url=draft.source_url, title=draft.source_title, locator=draft.locator)],
+            sources=[
+                EvidenceSourceRef(
+                    url=draft.source_url,
+                    title=sanitize_source_title(draft.source_title, draft.source_url) or "Unknown Source",
+                    locator=draft.locator,
+                )
+            ],
             confidence=draft.extraction_confidence,
             novelty_score=draft.relevance_score,
             exact_generation_tokens=draft.extractor_output_tokens,
@@ -210,7 +217,11 @@ def build_report_sources(evidence: Iterable[CuratedEvidence]) -> list[ReportSour
     sources: dict[str, tuple[str, list[str]]] = {}
     for item in evidence:
         for source in item.sources:
-            title, evidence_ids = sources.setdefault(source.url, (source.title, []))
+            clean_title = sanitize_source_title(source.title, source.url) or "Unknown Source"
+            fallback_title = sanitize_source_title("", source.url) or clean_title
+            title, evidence_ids = sources.setdefault(source.url, (clean_title, []))
+            if title == fallback_title and clean_title != fallback_title:
+                title = clean_title
             if item.evidence_id not in evidence_ids:
                 evidence_ids.append(item.evidence_id)
             sources[source.url] = (title, evidence_ids)

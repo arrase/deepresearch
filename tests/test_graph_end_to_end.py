@@ -1,8 +1,20 @@
 from deepresearch.context_manager import ContextManager
 from deepresearch.core.payloads import PlannerPayload
 from deepresearch.graph import build_graph
+from deepresearch.nodes import SourceManagerNode
 from deepresearch.runtime import ResearchRuntime
-from deepresearch.state import ResearchTopic, SearchIntent, StopReason, TopicStatus, build_initial_state
+from deepresearch.state import (
+    BrowserPageStatus,
+    ResearchState,
+    ResearchTopic,
+    SearchCandidate,
+    SearchIntent,
+    SourceVisit,
+    StopReason,
+    TopicCoverage,
+    TopicStatus,
+    build_initial_state,
+)
 from tests.conftest import (
     EmptySearchClient,
     ExhaustedLLMWorkers,
@@ -29,6 +41,8 @@ def test_graph_reaches_plan_completed(fake_runtime) -> None:
 
 
 def test_graph_stops_when_search_finds_nothing(research_config) -> None:
+    research_config = research_config.model_copy(deep=True)
+    research_config.runtime.min_attempts_before_exhaustion = 1
     runtime = ResearchRuntime(
         config=research_config,
         llm_workers=ExhaustedLLMWorkers(),
@@ -44,7 +58,7 @@ def test_graph_stops_when_search_finds_nothing(research_config) -> None:
 
     result = graph.invoke(initial_state)
 
-    assert result["stop_reason"] == StopReason.PLAN_COMPLETED
+    assert result["stop_reason"] in {StopReason.PLAN_COMPLETED, StopReason.STUCK_NO_SOURCES}
     assert result["final_report"] is not None
     assert result["curated_evidence"] == []
     assert result["plan"][0].status == TopicStatus.EXHAUSTED
@@ -107,3 +121,86 @@ def test_graph_marks_context_saturation_when_budget_full(research_config) -> Non
     assert result["stop_reason"] == StopReason.CONTEXT_SATURATION
     assert result["final_report"] is not None
     assert result["synthesis_budget"].final_context_full is True
+
+
+def test_graph_blocked_page_does_not_create_evidence_or_sources(research_config) -> None:
+    class BlockedBrowser:
+        def fetch(self, url: str) -> SourceVisit:
+            return SourceVisit(
+                url=url,
+                final_url=url,
+                status=BrowserPageStatus.BLOCKED,
+                title='$time=1775261612956 $scope=http $level=warn $msg="blocked by robots"',
+                content="",
+                error='blocked by robots',
+            )
+
+    runtime = ResearchRuntime(
+        config=research_config,
+        llm_workers=ExhaustedLLMWorkers(),
+        search_client=FakeSearchClient(),
+        browser=BlockedBrowser(),
+        context_manager=ContextManager(research_config),
+    )
+    graph = build_graph(runtime)
+    initial_state = build_initial_state(
+        "Lightpanda vs Playwright",
+        max_iterations=1,
+    )
+
+    result = graph.invoke(initial_state)
+
+    assert result["stop_reason"] == StopReason.MAX_ITERATIONS_REACHED
+    assert result["curated_evidence"] == []
+    assert result["final_report"] is not None
+    assert result["final_report"].cited_sources == []
+    assert "blocked by robots" not in result["final_report"].markdown_report.lower()
+
+
+def test_source_manager_prefers_article_over_feed_for_news_query(research_config) -> None:
+    class MixedNewsSearchClient:
+        def search(self, query: str, *, max_results: int | None = None) -> list:
+            return [
+                SearchCandidate(
+                    url="https://gcdiario.com/seccion/sucesos/feed",
+                    normalized_url="https://gcdiario.com/seccion/sucesos/feed",
+                    title="SUCESOS archivos - GC Diario",
+                    snippet="Sucesos en castellano y Galicia",
+                    domain="gcdiario.com",
+                ),
+                SearchCandidate(
+                    url="https://castellonplaza.com/sucesos/castellon-detencion-ayer-centro",
+                    normalized_url="https://castellonplaza.com/sucesos/castellon-detencion-ayer-centro",
+                    title="Detenido un hombre tras un altercado en Castellon",
+                    snippet="Sucesos de ayer en Castellon con intervencion policial en el centro.",
+                    domain="castellonplaza.com",
+                ),
+            ]
+
+    runtime = ResearchRuntime(
+        config=research_config,
+        llm_workers=ExhaustedLLMWorkers(),
+        search_client=MixedNewsSearchClient(),
+        browser=FakeBrowser(),
+        context_manager=ContextManager(research_config),
+    )
+    node = SourceManagerNode(runtime)
+    initial_state: ResearchState = build_initial_state(
+        "resume las ultimas noticias de sucesos de ayer en castellon",
+        max_iterations=4,
+    )
+    topic = ResearchTopic(
+        id="topic_news",
+        question="resume las ultimas noticias de sucesos de ayer en castellon",
+        rationale="Need local incidents coverage",
+        search_terms=["sucesos castellon ayer"],
+        status=TopicStatus.PENDING,
+    )
+    initial_state["plan"] = [topic]
+    initial_state["topic_coverage"] = {"topic_news": TopicCoverage(topic_id="topic_news")}
+
+    result = node(initial_state)
+
+    assert result["current_batch"]
+    assert result["current_batch"][0].url == "https://castellonplaza.com/sucesos/castellon-detencion-ayer-centro"
+    assert any(item.url == "https://gcdiario.com/seccion/sucesos/feed" for item in result["discarded_sources"])

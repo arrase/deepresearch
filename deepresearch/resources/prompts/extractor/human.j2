@@ -19,9 +19,9 @@ Extract only source-supported evidence relevant to the active topic.
 Rules:
 - If the source does not contain a useful fact for the active topic, return {"evidences": []}.
 - Each evidence item must capture one distinct fact.
-- `quotation` must be copied or closely excerpted from the source text.
-- `claim` must stay close to the source and avoid extra inference.
-- `summary` must be short and clear.
+- `quotation` must be copied or closely excerpted from the source text, in its original language.
+- `claim` must stay close to the source meaning but must be written in {{ language }}. Avoid extra inference.
+- `summary` must be short, clear, and written in {{ language }}.
 - `citation_locator` must be short and practical, for example: "opening paragraph", "table 1", or "section: results".
 - `caveats` should be empty unless the source itself signals uncertainty, limits, ambiguity, or missing detail.
 - Avoid repeating prior evidence unless this source adds materially different support.

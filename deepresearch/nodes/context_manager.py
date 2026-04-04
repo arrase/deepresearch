@@ -21,7 +21,7 @@ class ContextManagerNode:
     @traceable(name="context-manager-node")
     @log_node_activity("context_manager", "Curating evidence for: {query}")
     def __call__(self, state: ResearchState) -> dict:
-        browser_result = state.get("current_browser_result")
+        browser_results = state.get("browser_results") or []
         drafts = state["extracted_evidence_buffer"]
         curated, accepted, merged_count, exact_added_tokens = curate_evidence(
             state["curated_evidence"],
@@ -33,14 +33,18 @@ class ContextManagerNode:
         coverage = compute_topic_coverages(state["plan"], curated, state["topic_attempts"])
 
         discarded = list(state["discarded_sources"])
-        if browser_result and browser_result.status.value in {"useful", "partial"} and not drafts:
-            discarded.append(
-                DiscardedSource(
-                    url=browser_result.url,
-                    reason=SourceDiscardReason.NO_EVIDENCE,
-                    note="No evidence extracted from this source",
+        useful_results = [
+            r for r in browser_results if r.status.value in {"useful", "partial"}
+        ]
+        if useful_results and not drafts:
+            for result in useful_results:
+                discarded.append(
+                    DiscardedSource(
+                        url=result.url,
+                        reason=SourceDiscardReason.NO_EVIDENCE,
+                        note="No evidence extracted from this source",
+                    )
                 )
-            )
 
         log_runtime_event(self._runtime, "[context_manager] Curated evidence", verbosity=1, accepted=len(accepted))
         log_runtime_event(

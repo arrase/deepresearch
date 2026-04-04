@@ -3,6 +3,9 @@ from __future__ import annotations
 from typing import Any
 
 from deepresearch.config import ResearchConfig
+from deepresearch.core.utils import classify_browser_payload, sanitize_source_title, split_browser_payload
+from deepresearch.core.utils.evidence import build_report_sources
+from deepresearch.state import BrowserPageStatus, CuratedEvidence, EvidenceSourceRef
 from deepresearch.tools import DuckDuckGoSearchClient
 
 
@@ -75,3 +78,68 @@ def test_duckduckgo_lite_retries_with_normalized_query_after_anomaly(monkeypatch
     assert len(results) == 1
     assert calls[0].startswith("¿Qué modelos")
     assert calls[1] == "Que modelos de ingresos actuales y proyectados sostienen el negocio"
+
+
+def test_split_browser_payload_blocks_robot_warning_without_content() -> None:
+  raw = (
+    '$time=1775261612956 $scope=http $level=warn $msg="blocked by robots" '
+    "url=https://www.linkedin.com/posts/lightpanda"
+  )
+
+  content, diagnostics = split_browser_payload(raw, max_chars=4000)
+  status = classify_browser_payload(
+    content=content,
+    error=diagnostics,
+    exit_code=0,
+    min_partial_chars=120,
+    min_useful_chars=300,
+  )
+
+  assert content == ""
+  assert "blocked by robots" in diagnostics
+  assert status == BrowserPageStatus.BLOCKED
+
+
+def test_sanitize_source_title_falls_back_for_noise() -> None:
+  title = sanitize_source_title(
+    '$time=1775261744854 $scope=js $level=warn $msg=window.reportError message="Error: Minified React error #418"',
+    "https://lightpanda.io/blog/posts/from-local-to-real-world-benchmarks",
+  )
+
+  assert title == "lightpanda.io"
+
+
+def test_build_report_sources_prefers_clean_title_over_noise() -> None:
+  noisy = CuratedEvidence(
+    topic_id="topic_1",
+    canonical_claim="Claim one",
+    summary="Summary one",
+    sources=[
+      EvidenceSourceRef(
+        url="https://lightpanda.io/blog/posts/from-local-to-real-world-benchmarks",
+        title='$time=1775261744854 $scope=js $level=warn $msg=window.reportError',
+        locator="p1",
+      )
+    ],
+    prompt_fit_tokens_estimate=20,
+    exact_generation_tokens=10,
+  )
+  clean = CuratedEvidence(
+    topic_id="topic_1",
+    canonical_claim="Claim two",
+    summary="Summary two",
+    sources=[
+      EvidenceSourceRef(
+        url="https://lightpanda.io/blog/posts/from-local-to-real-world-benchmarks",
+        title="From Local To Real World Benchmarks",
+        locator="p2",
+      )
+    ],
+    prompt_fit_tokens_estimate=20,
+    exact_generation_tokens=10,
+  )
+
+  sources = build_report_sources([noisy, clean])
+
+  assert len(sources) == 1
+  assert sources[0].title == "From Local To Real World Benchmarks"

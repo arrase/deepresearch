@@ -118,6 +118,8 @@ class SearchConfig(BaseModel):
     backend: str = Field(default="tavily", pattern="^(tavily)$")
     api_key: str | None = Field(default=None)
     results_per_query: int = Field(default=5, ge=1, le=20)
+    max_raw_content_chars: int = Field(default=24000, ge=1000)
+    fallback_backend: str | None = Field(default="duckduckgo")
     user_agent: str = Field(
         default=(
             "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
@@ -162,10 +164,12 @@ class RuntimeConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     max_iterations: int = Field(default=8, ge=1)
-    search_batch_size: int = Field(default=1, ge=1, le=10)
-    max_cycles_without_new_evidence: int = Field(default=2, ge=1)
-    max_cycles_without_useful_sources: int = Field(default=2, ge=1)
+    search_batch_size: int = Field(default=3, ge=1, le=10)
+    min_attempts_before_exhaustion: int = Field(default=3, ge=1)
+    max_cycles_without_new_evidence: int = Field(default=4, ge=1)
+    max_cycles_without_useful_sources: int = Field(default=4, ge=1)
     max_consecutive_technical_failures: int = Field(default=3, ge=1)
+    semantic_eval_interval: int = Field(default=0, ge=0)
     allow_dynamic_replan: bool = Field(default=True)
     verbosity: int = Field(default=0, ge=0, le=3)
     llm_retry_attempts: int = Field(default=2, ge=0, le=5)

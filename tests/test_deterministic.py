@@ -1,10 +1,19 @@
 from deepresearch.core.utils import (
     canonicalize_url,
+    choose_active_topic,
     compute_minimum_coverage,
     deduplicate_candidates,
     rank_topics_for_source,
+    validate_candidate_for_topic,
 )
-from deepresearch.state import CuratedEvidence, EvidenceSourceRef, ResearchTopic, SearchCandidate
+from deepresearch.state import (
+    CuratedEvidence,
+    EvidenceSourceRef,
+    ResearchTopic,
+    SearchCandidate,
+    TopicCoverage,
+    TopicStatus,
+)
 
 
 def test_canonicalize_url_removes_tracking_query_and_fragment() -> None:
@@ -71,3 +80,72 @@ def test_rank_topics_for_source_prefers_matching_topic() -> None:
     )
 
     assert ranked[0] == "topic_2"
+
+
+def test_choose_active_topic_prefers_in_progress_topic_for_depth() -> None:
+    pending = ResearchTopic(
+        id="topic_pending",
+        question="What is Playwright?",
+        rationale="Need baseline",
+        status=TopicStatus.PENDING,
+        search_terms=["playwright"],
+    )
+    in_progress = ResearchTopic(
+        id="topic_focus",
+        question="What are Lightpanda performance characteristics?",
+        rationale="Need comparative depth",
+        status=TopicStatus.IN_PROGRESS,
+        search_terms=["lightpanda benchmark"],
+    )
+
+    chosen = choose_active_topic(
+        [pending, in_progress],
+        {"topic_pending": 0, "topic_focus": 1},
+        {
+            "topic_pending": TopicCoverage(topic_id="topic_pending"),
+            "topic_focus": TopicCoverage(topic_id="topic_focus", accepted_evidence_count=1, attempts=1),
+        },
+    )
+
+    assert chosen is not None
+    assert chosen.id == "topic_focus"
+
+
+def test_validate_candidate_rejects_feed_with_weak_match() -> None:
+    topic = ResearchTopic(
+        id="topic_news",
+        question="resume las ultimas noticias de sucesos de ayer en castellon",
+        rationale="Need local incidents coverage",
+        search_terms=["sucesos castellon ayer"],
+    )
+    candidate = SearchCandidate(
+        url="https://gcdiario.com/seccion/sucesos/feed",
+        title="SUCESOS archivos - GC Diario",
+        snippet="Ultimos sucesos en castellano y Galicia",
+        domain="gcdiario.com",
+    )
+
+    is_valid, note = validate_candidate_for_topic(candidate, topic)
+
+    assert is_valid is False
+    assert "Feed or RSS" in note
+
+
+def test_validate_candidate_accepts_article_with_location_match() -> None:
+    topic = ResearchTopic(
+        id="topic_news",
+        question="resume las ultimas noticias de sucesos de ayer en castellon",
+        rationale="Need local incidents coverage",
+        search_terms=["sucesos castellon ayer"],
+    )
+    candidate = SearchCandidate(
+        url="https://castellonplaza.com/sucesos/castellon-detencion-ayer-centro",
+        title="Detenido un hombre tras un altercado en Castellon",
+        snippet="Sucesos de ayer en Castellon con intervencion policial en el centro.",
+        domain="castellonplaza.com",
+    )
+
+    is_valid, note = validate_candidate_for_topic(candidate, topic)
+
+    assert is_valid is True
+    assert note == ""

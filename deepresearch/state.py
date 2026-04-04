@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any, NotRequired, TypedDict
+from typing import Any, TypedDict
 from uuid import uuid4
 
 from pydantic import BaseModel, Field, field_validator
@@ -125,6 +125,7 @@ class SearchCandidate(BaseModel):
     topic_ids: list[str] = Field(default_factory=list)
     discovered_via: str = "search"
     query: str = ""
+    raw_content: str = ""
 
 
 class DiscardedSource(BaseModel):
@@ -325,7 +326,7 @@ class ResearchState(TypedDict):
     working_dossier: WorkingDossier
     llm_usage: dict[str, dict[str, int]]
     final_report: FinalReport | None
-    current_browser_result: NotRequired[SourceVisit | None]
+    browser_results: list[SourceVisit]
 
 
 def build_initial_state(query: str, *, max_iterations: int) -> ResearchState:
@@ -367,5 +368,5 @@ def build_initial_state(query: str, *, max_iterations: int) -> ResearchState:
         "working_dossier": WorkingDossier(),
         "llm_usage": {},
         "final_report": None,
-        "current_browser_result": None,
+        "browser_results": [],
     }

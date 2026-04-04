@@ -54,8 +54,8 @@ def _route_after_source_manager(state: ResearchState) -> str:
 
 
 def _route_after_browser(state: ResearchState) -> str:
-    result = state.get("current_browser_result")
-    if result and result.status in {BrowserPageStatus.USEFUL, BrowserPageStatus.PARTIAL}:
+    results = state.get("browser_results") or []
+    if any(r.status in {BrowserPageStatus.USEFUL, BrowserPageStatus.PARTIAL} for r in results):
         return "extractor"
     return "evaluator"
 

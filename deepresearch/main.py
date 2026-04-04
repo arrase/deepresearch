@@ -15,7 +15,7 @@ from .observability import configure_logging, langsmith_tracing
 from .output_utils import generate_pdf
 from .runtime import ResearchRuntime, SearchClientLike
 from .state import build_initial_state
-from .tools import LightpandaDockerManager, TavilySearchClient
+from .tools import DuckDuckGoSearchClient, LightpandaDockerManager, TavilySearchClient
 
 logger = logging.getLogger(__name__)
 
@@ -25,12 +25,18 @@ def build_runtime(config: ResearchConfig) -> ResearchRuntime:
     if config.search.backend != "tavily":
         raise ValueError(f"Unsupported search backend: {config.search.backend}")
     search_client = TavilySearchClient(config.search)
+
+    fallback_client: SearchClientLike | None = None
+    if config.search.fallback_backend == "duckduckgo":
+        fallback_client = DuckDuckGoSearchClient(config.search)
+
     return ResearchRuntime(
         config=config,
         context_manager=ContextManager(config),
         llm_workers=LLMWorkers(config),
         browser=LightpandaDockerManager(config.browser),
         search_client=search_client,
+        fallback_search_client=fallback_client,
     )
 
 

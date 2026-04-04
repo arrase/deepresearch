@@ -49,3 +49,4 @@ class ResearchRuntime:
     llm_workers: LLMWorkersLike
     browser: BrowserLike
     search_client: SearchClientLike
+    fallback_search_client: SearchClientLike | None = None

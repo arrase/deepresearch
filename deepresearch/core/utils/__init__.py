@@ -31,8 +31,17 @@ from .ranking import (
     rank_topics_for_source,
     reformulate_queries,
     score_candidate,
+    validate_candidate_for_topic,
 )
-from .text import estimate_tokens, select_relevant_chunks, short_excerpt, split_text
+from .text import (
+    estimate_tokens,
+    is_browser_noise_line,
+    sanitize_source_title,
+    select_relevant_chunks,
+    short_excerpt,
+    split_browser_payload,
+    split_text,
+)
 from .url import TRACKING_QUERY_KEYS, canonicalize_url, extract_domain
 
 __all__ = [
@@ -50,15 +59,18 @@ __all__ = [
     "enrich_gaps_with_search_terms",
     "estimate_tokens",
     "extract_domain",
+    "is_browser_noise_line",
     "numeric_tokens",
     "prune_queue_by_domain",
     "rank_topics_for_source",
     "reformulate_queries",
     "render_markdown_report",
+    "sanitize_source_title",
     "score_candidate",
     "select_evidence_for_context",
     "select_relevant_chunks",
     "short_excerpt",
+    "split_browser_payload",
     "significant_tokens",
     "split_text",
     "summarize_evidence",
@@ -68,5 +80,6 @@ __all__ = [
     "summarize_subqueries",
     "total_evidence_tokens",
     "update_working_dossier",
+    "validate_candidate_for_topic",
     "canonicalize_url",
 ]

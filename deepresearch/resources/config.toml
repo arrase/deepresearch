@@ -24,6 +24,8 @@ request_timeout_seconds = 90
 backend = "tavily"
 api_key = ""
 results_per_query = 5
+max_raw_content_chars = 24000
+fallback_backend = "duckduckgo"
 user_agent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
 
 [reporter]
@@ -43,10 +45,12 @@ output = "pdf"
 
 [runtime]
 max_iterations = 8
-search_batch_size = 1
-max_cycles_without_new_evidence = 2
-max_cycles_without_useful_sources = 2
+search_batch_size = 3
+min_attempts_before_exhaustion = 3
+max_cycles_without_new_evidence = 4
+max_cycles_without_useful_sources = 4
 max_consecutive_technical_failures = 3
+semantic_eval_interval = 0
 allow_dynamic_replan = true
 verbosity = 0
 llm_retry_attempts = 2
