@@ -1,3 +1,6 @@
+Schema instructions:
+{{ format_instructions }}
+
 Original instructions:
 {{ original_prompt }}
 
@@ -6,3 +9,12 @@ Invalid output:
 
 Parse error:
 {{ parse_error }}
+
+Task:
+Return corrected JSON only.
+
+Rules:
+- Keep supported facts.
+- Remove keys that are not in the schema.
+- Do not add new claims.
+- Do not explain your work.

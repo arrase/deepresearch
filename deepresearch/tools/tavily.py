@@ -46,10 +46,10 @@ class TavilySearchClient:
             candidates.append(
                 SearchCandidate(
                     url=canonicalize_url(url),
+                    normalized_url=canonicalize_url(url),
                     title=result.get("title", "")[:300],
                     snippet=result.get("content", "")[:500],
                     domain=extract_domain(url),
-                    source_type="search_result",
                     score=result.get("score", 0.0),
                 )
             )

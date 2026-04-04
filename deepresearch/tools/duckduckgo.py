@@ -73,10 +73,10 @@ class DuckDuckGoSearchClient:
             candidates.append(
                 SearchCandidate(
                     url=canonicalize_url(url),
+                    normalized_url=canonicalize_url(url),
                     title=title[:300],
                     snippet=snippet[:500],
                     domain=extract_domain(url),
-                    source_type="search_result",
                 )
             )
             row_index += 3

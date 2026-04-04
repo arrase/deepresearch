@@ -5,7 +5,7 @@ temperature_planner = 0.2
 temperature_extractor = 0.0
 temperature_evaluator = 0.0
 temperature_synthesizer = 0.1
-num_ctx = 150000
+num_ctx = 100000
 num_predict = 8192
 timeout_seconds = 120
 
@@ -23,10 +23,18 @@ request_timeout_seconds = 90
 [search]
 backend = "tavily"
 api_key = ""
-results_per_query = 8
-max_queries_per_cycle = 5
-max_queue_size = 30
+results_per_query = 5
 user_agent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+
+[reporter]
+output_reserve_ratio = 0.20
+prompt_margin_tokens = 512
+
+[dedup]
+lexical_fingerprint = true
+approximate_jaccard_threshold = 0.85
+min_length_ratio = 0.8
+max_length_ratio = 1.25
 
 [discord]
 token = ""
@@ -34,21 +42,15 @@ user_id = ""
 output = "pdf"
 
 [runtime]
-max_iterations = 10
+max_iterations = 8
+search_batch_size = 1
+max_cycles_without_new_evidence = 2
+max_cycles_without_useful_sources = 2
+max_consecutive_technical_failures = 3
+allow_dynamic_replan = true
 verbosity = 0
 llm_retry_attempts = 2
 language = "English"
-eval_batch_size = 3
-synthesizer_output_reserve_ratio = 0.20
-synthesizer_prompt_margin = 512
-max_stagnation_cycles = 4
-max_consecutive_technical_failures = 3
-max_cycles_without_new_evidence = 3
-max_cycles_without_useful_sources = 4
-min_progress_score_to_reset_stagnation = 2
-weight_new_evidence = 2
-weight_useful_source = 1
-weight_resolved_subquery = 3
 
 [langsmith]
 enabled = false

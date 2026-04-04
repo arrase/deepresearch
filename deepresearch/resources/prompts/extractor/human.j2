@@ -1,14 +1,28 @@
-Primary question: {{ query }}
+Research question:
+{{ query }}
 
-Active subqueries:
+Active topic:
 {{ active_subqueries }}
-Open gaps:
+
+Open gaps for this topic:
 {{ open_gaps }}
 
-Prior evidence:
+Accepted evidence for this topic:
 {{ evidentiary }}
 
-Current source:
+Source text:
 {{ local_source }}
 
-Task: Extract traceable atomic evidence without inferring beyond the source text. Return up to 8 evidence items if they are relevant. Keep caveats and summaries detailed but concise.
+Task:
+Extract only source-supported evidence relevant to the active topic.
+
+Rules:
+- If the source does not contain a useful fact for the active topic, return {"evidences": []}.
+- Each evidence item must capture one distinct fact.
+- `quotation` must be copied or closely excerpted from the source text.
+- `claim` must stay close to the source and avoid extra inference.
+- `summary` must be short and clear.
+- `citation_locator` must be short and practical, for example: "opening paragraph", "table 1", or "section: results".
+- `caveats` should be empty unless the source itself signals uncertainty, limits, ambiguity, or missing detail.
+- Avoid repeating prior evidence unless this source adds materially different support.
+- Return at most 5 evidence items.

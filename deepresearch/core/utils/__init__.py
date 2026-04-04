@@ -1,14 +1,4 @@
-"""Deterministic internal workers — re-export façade.
-
-All public helpers are available directly via ``from deepresearch.core.utils import …``
-for backwards compatibility.  The implementations live in the sub-modules:
-
-- ``url``      – URL canonicalization and domain extraction
-- ``text``     – chunking, token estimation, excerpts
-- ``ranking``  – candidate scoring, deduplication, classification
-- ``evidence`` – evidence dedup, selection, dossier updates
-- ``coverage`` – summarization and rendering helpers
-"""
+"""Deterministic utilities re-exported for the research pipeline."""
 
 from .coverage import (
     render_markdown_report,
@@ -20,65 +10,63 @@ from .coverage import (
 )
 from .evidence import (
     build_report_sources,
+    canonical_fingerprint,
+    claims_are_approximate_duplicates,
     compute_minimum_coverage,
-    deduplicate_evidence,
+    compute_topic_coverages,
+    curate_evidence,
+    numeric_tokens,
     select_evidence_for_context,
-    stable_evidence_key,
+    significant_tokens,
     total_evidence_tokens,
     update_working_dossier,
 )
 from .ranking import (
+    build_search_query,
+    choose_active_topic,
     classify_browser_payload,
     deduplicate_candidates,
     enrich_gaps_with_search_terms,
     prune_queue_by_domain,
-    rank_subqueries_for_source,
+    rank_topics_for_source,
     reformulate_queries,
     score_candidate,
 )
-from .text import (
-    estimate_tokens,
-    select_relevant_chunks,
-    short_excerpt,
-    split_text,
-)
-from .url import (
-    TRACKING_QUERY_KEYS,
-    canonicalize_url,
-    extract_domain,
-)
+from .text import estimate_tokens, select_relevant_chunks, short_excerpt, split_text
+from .url import TRACKING_QUERY_KEYS, canonicalize_url, extract_domain
 
 __all__ = [
-    # url
     "TRACKING_QUERY_KEYS",
-    "canonicalize_url",
-    "extract_domain",
-    # text
-    "estimate_tokens",
-    "select_relevant_chunks",
-    "short_excerpt",
-    "split_text",
-    # ranking
+    "build_report_sources",
+    "build_search_query",
+    "canonical_fingerprint",
+    "choose_active_topic",
+    "claims_are_approximate_duplicates",
     "classify_browser_payload",
+    "compute_minimum_coverage",
+    "compute_topic_coverages",
+    "curate_evidence",
     "deduplicate_candidates",
     "enrich_gaps_with_search_terms",
+    "estimate_tokens",
+    "extract_domain",
+    "numeric_tokens",
     "prune_queue_by_domain",
-    "rank_subqueries_for_source",
+    "rank_topics_for_source",
     "reformulate_queries",
-    "score_candidate",
-    # evidence
-    "build_report_sources",
-    "compute_minimum_coverage",
-    "deduplicate_evidence",
-    "select_evidence_for_context",
-    "stable_evidence_key",
-    "total_evidence_tokens",
-    "update_working_dossier",
-    # coverage
     "render_markdown_report",
+    "score_candidate",
+    "select_evidence_for_context",
+    "select_relevant_chunks",
+    "short_excerpt",
+    "significant_tokens",
+    "split_text",
     "summarize_evidence",
     "summarize_gaps",
     "summarize_search_candidates",
     "summarize_source_visit",
     "summarize_subqueries",
+    "total_evidence_tokens",
+    "update_working_dossier",
+    "canonicalize_url",
 ]

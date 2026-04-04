@@ -1,9 +1,14 @@
-Return a JSON object:
+Return one JSON object:
 {
-  "resolved_subquery_ids": ["..."],
-  "contradictions": [{"topic": "...", "statement_a": "...", "statement_b": "...", "evidence_ids": ["..."], "severity": "medium", "note": "..."}],
-  "open_gaps": [{"subquery_id": "...", "description": "...", "severity": "medium", "rationale": "...", "suggested_queries": ["..."], "actionable": true}],
-  "is_sufficient": true,
+  "resolved_subquery_ids": ["topic_1"],
+  "contradictions": [{"topic_id": "topic_1", "statement_a": "...", "statement_b": "...", "evidence_ids": ["..."], "severity": "medium", "note": "..."}],
+  "open_gaps": [{"topic_id": "topic_2", "description": "...", "severity": "medium", "rationale": "...", "suggested_queries": ["..."], "actionable": true}],
+  "is_sufficient": false,
   "rationale": "..."
 }
-JSON ONLY. No talk.
+Rules:
+- `resolved_subquery_ids` stores topic ids for compatibility.
+- Use `topic_id` inside contradictions and open_gaps.
+- `contradictions` and `open_gaps` may be empty lists.
+- No extra keys.
+- JSON only.

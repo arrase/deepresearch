@@ -90,7 +90,7 @@ class ModelConfig(BaseModel):
     temperature_evaluator: float = Field(default=0.0, ge=0.0, le=1.0)
     temperature_synthesizer: float = Field(default=0.1, ge=0.0, le=1.0)
     num_ctx: int = Field(default=100000, ge=4096)
-    num_predict: int = Field(default=900, ge=64)
+    num_predict: int = Field(default=8192, ge=64)
     timeout_seconds: int = Field(default=120, ge=5)
 
 
@@ -115,17 +115,35 @@ class SearchConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    backend: str = Field(default="duckduckgo_lite")
+    backend: str = Field(default="tavily", pattern="^(tavily)$")
     api_key: str | None = Field(default=None)
     results_per_query: int = Field(default=5, ge=1, le=20)
-    max_queries_per_cycle: int = Field(default=3, ge=1, le=10)
-    max_queue_size: int = Field(default=30, ge=5, le=200)
     user_agent: str = Field(
         default=(
             "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
             "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"
         )
     )
+
+
+class ReporterConfig(BaseModel):
+    """Public controls for the final synthesis budget."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    output_reserve_ratio: float = Field(default=0.20, ge=0.05, lt=0.8)
+    prompt_margin_tokens: int = Field(default=512, ge=0)
+
+
+class DedupConfig(BaseModel):
+    """Public controls for conservative lexical deduplication."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    lexical_fingerprint: bool = Field(default=True)
+    approximate_jaccard_threshold: float = Field(default=0.85, ge=0.5, le=1.0)
+    min_length_ratio: float = Field(default=0.8, ge=0.1, le=1.0)
+    max_length_ratio: float = Field(default=1.25, ge=1.0, le=5.0)
 
 
 class DiscordConfig(BaseModel):
@@ -144,20 +162,14 @@ class RuntimeConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     max_iterations: int = Field(default=8, ge=1)
+    search_batch_size: int = Field(default=1, ge=1, le=10)
+    max_cycles_without_new_evidence: int = Field(default=2, ge=1)
+    max_cycles_without_useful_sources: int = Field(default=2, ge=1)
+    max_consecutive_technical_failures: int = Field(default=3, ge=1)
+    allow_dynamic_replan: bool = Field(default=True)
     verbosity: int = Field(default=0, ge=0, le=3)
     llm_retry_attempts: int = Field(default=2, ge=0, le=5)
     language: str = Field(default="English")
-    synthesizer_output_reserve_ratio: float = Field(default=0.20, ge=0.05, lt=0.8)
-    synthesizer_prompt_margin: int = Field(default=512, ge=0)
-    eval_batch_size: int = Field(default=3, ge=1, le=10)
-    max_stagnation_cycles: int = Field(default=4, ge=1)
-    max_consecutive_technical_failures: int = Field(default=3, ge=1)
-    max_cycles_without_new_evidence: int = Field(default=3, ge=1)
-    max_cycles_without_useful_sources: int = Field(default=4, ge=1)
-    min_progress_score_to_reset_stagnation: int = Field(default=2, ge=1)
-    weight_new_evidence: int = Field(default=2, ge=0)
-    weight_useful_source: int = Field(default=1, ge=0)
-    weight_resolved_subquery: int = Field(default=3, ge=0)
 
 
 class LangSmithConfig(BaseModel):
@@ -186,6 +198,8 @@ class ResearchConfig(BaseModel):
     model: ModelConfig = Field(default_factory=ModelConfig)
     browser: BrowserConfig = Field(default_factory=BrowserConfig)
     search: SearchConfig = Field(default_factory=SearchConfig)
+    reporter: ReporterConfig = Field(default_factory=ReporterConfig)
+    dedup: DedupConfig = Field(default_factory=DedupConfig)
     discord: DiscordConfig = Field(default_factory=DiscordConfig)
     runtime: RuntimeConfig = Field(default_factory=RuntimeConfig)
     langsmith: LangSmithConfig = Field(default_factory=LangSmithConfig)

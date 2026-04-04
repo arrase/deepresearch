@@ -1,109 +1,128 @@
-from deepresearch.config import ResearchConfig
 from deepresearch.context_manager import ContextManager
-from deepresearch.state import AtomicEvidence, Subquery, build_initial_state
+from deepresearch.state import (
+    ConfidenceLevel,
+    CuratedEvidence,
+    EvidenceSourceRef,
+    Gap,
+    GapSeverity,
+    ResearchTopic,
+    TopicCoverage,
+    TopicStatus,
+    build_initial_state,
+)
 
 
-def test_extractor_context_selects_relevant_evidence() -> None:
-    config = ResearchConfig()
-    manager = ContextManager(config)
-    state = build_initial_state(
-        "Primary question",
-        max_iterations=4,
-    )
-    subquery = Subquery(question="Subquery", rationale="r", search_terms=["fusion"])
-    state["active_subqueries"] = [subquery]
-    state["atomic_evidence"] = [
-        AtomicEvidence(
-            subquery_id=subquery.id,
-            source_url="https://example.com",
-            source_title="Example",
-            summary="Resumen",
-            claim="Fusion plants remain expensive",
-            quotation="Fusion plants remain expensive",
-            citation_locator="p2",
-        )
-    ]
-    context = manager.extractor_context(state, targets=[subquery.id], local_source="Content")
-    assert context.evidentiary
-    assert context.local_source == "Content"
-
-
-def test_synthesis_budget_marks_final_context_as_full_when_evidence_overflows() -> None:
-    config = ResearchConfig()
-    config.model.num_ctx = 200
-    config.model.num_predict = 64
-    config.runtime.synthesizer_output_reserve_ratio = 0.20
-    config.runtime.synthesizer_prompt_margin = 0
-    manager = ContextManager(config)
-    state = build_initial_state("Primary question", max_iterations=4)
-    subquery = Subquery(question="Subquery", rationale="r", search_terms=["fusion"])
-    state["active_subqueries"] = [subquery]
-    state["atomic_evidence"] = [
-        AtomicEvidence(
-            subquery_id=subquery.id,
-            source_url=f"https://example.com/{idx}",
-            source_title=f"Example {idx}",
-            summary="Resumen " * 8,
-            claim=f"Fusion plants remain expensive {idx}",
-            quotation=("Fusion plants remain expensive and complex. " * 10).strip(),
-            citation_locator="p2",
-        )
-        for idx in range(3)
-    ]
-
+def test_synthesis_budget_respects_reporter_reserve(research_config) -> None:
+    manager = ContextManager(research_config)
+    state = build_initial_state("What is the current state of fusion energy?", max_iterations=4)
     budget = manager.synthesis_budget(state)
 
-    assert budget["final_context_full"] is True
-    candidate_count = budget["candidate_evidence_count"]
-    selected_count = budget["selected_evidence_count"]
-    assert isinstance(candidate_count, int)
-    assert isinstance(selected_count, int)
-    assert candidate_count >= selected_count
+    assert budget.context_window_tokens == research_config.model.num_ctx
+    assert budget.reserved_output_tokens == min(
+        research_config.model.num_predict,
+        int(research_config.model.num_ctx * research_config.reporter.output_reserve_ratio),
+    )
+    assert budget.prompt_margin_tokens == research_config.reporter.prompt_margin_tokens
+    assert budget.available_prompt_tokens > 0
+    assert budget.final_context_full is False
 
 
-def test_planner_context_surfaces_coverage_and_source_balance_signals() -> None:
-    config = ResearchConfig()
-    manager = ContextManager(config)
-    state = build_initial_state("How should I evaluate a new browser automation tool?", max_iterations=4)
-    sq_1 = Subquery(
-        id="sq_1",
-        question="What capabilities does it provide?",
-        rationale="r",
-        search_terms=["capabilities"],
-        evidence_target=2,
-    )
-    sq_2 = Subquery(
-        id="sq_2",
-        question="What are the limitations and trade-offs?",
-        rationale="r",
-        search_terms=["limitations"],
-        evidence_target=2,
-    )
-    state["active_subqueries"] = [sq_1, sq_2]
-    state["atomic_evidence"] = [
-        AtomicEvidence(
-            subquery_id="sq_1",
-            source_url="https://vendor.example/docs",
-            source_title="Vendor docs",
-            summary="Capabilities summary",
-            claim="The tool supports browser automation through a scripting API.",
-            quotation="The tool supports browser automation through a scripting API.",
-            citation_locator="p1",
-        ),
-        AtomicEvidence(
-            subquery_id="sq_1",
-            source_url="https://vendor.example/blog",
-            source_title="Vendor blog",
-            summary="Capabilities summary",
-            claim="The tool emphasizes speed and lightweight execution.",
-            quotation="The tool emphasizes speed and lightweight execution.",
-            citation_locator="p2",
-        ),
+def test_planner_context_renders_topics_and_gaps(research_config) -> None:
+    manager = ContextManager(research_config)
+    state = build_initial_state("Explain the 2025 outlook for grid-scale batteries.", max_iterations=4)
+    state["plan"] = [
+        ResearchTopic(
+            id="topic_storage",
+            question="How fast is grid storage deployment growing?",
+            rationale="Need deployment baseline.",
+            evidence_target=1,
+            search_terms=["grid storage deployment growth"],
+            status=TopicStatus.IN_PROGRESS,
+        )
     ]
+    state["open_gaps"] = [
+        Gap(
+            topic_id="topic_storage",
+            description="Missing regional deployment comparison",
+            severity=GapSeverity.HIGH,
+            suggested_queries=["grid battery deployment by region 2024 2025"],
+        )
+    ]
+    state["curated_evidence"] = [
+        CuratedEvidence(
+            evidence_id="evidence_1",
+            topic_id="topic_storage",
+            canonical_claim="Battery deployments accelerated in 2024.",
+            summary="Deployments accelerated in 2024 across multiple markets.",
+            support_quotes=["Deployments accelerated in 2024 across multiple markets."],
+            sources=[
+                EvidenceSourceRef(
+                    url="https://example.com/storage",
+                    title="Storage report",
+                    locator="p1",
+                )
+            ],
+            exact_generation_tokens=32,
+            prompt_fit_tokens_estimate=28,
+            confidence=ConfidenceLevel.MEDIUM,
+            canonical_fingerprint="battery-deployments-2024",
+        )
+    ]
+    state["topic_coverage"] = {
+        "topic_storage": TopicCoverage(
+            topic_id="topic_storage",
+            accepted_evidence_count=1,
+            unique_domains=1,
+            attempts=1,
+            empty_attempts=0,
+            resolved=False,
+            exhausted=False,
+            rationale="coverage incomplete",
+            pending_gaps=["Missing regional deployment comparison"],
+        )
+    }
+    state["working_dossier"].topic_summaries["topic_storage"] = "Battery deployment baseline captured."
 
     context = manager.planner_context(state)
 
-    assert "sq_2" in context.coverage_summary
-    assert "no evidence yet" in context.coverage_summary
-    assert "vendor.example" in context.source_balance_summary
-    assert "highly concentrated" in context.source_balance_summary
+    assert "topic_storage" in context.active_subqueries
+    assert "Missing regional deployment comparison" in context.open_gaps
+    assert "topic_storage" in context.coverage_summary
+    assert "Battery deployment baseline captured." in context.dossier_context
+
+
+def test_synthesizer_context_includes_budget_mapping(research_config) -> None:
+    manager = ContextManager(research_config)
+    state = build_initial_state("Summarize fusion energy commercialization progress.", max_iterations=4)
+    state["plan"] = [
+        ResearchTopic(
+            id="topic_fusion",
+            question="What is the commercialization status of fusion energy?",
+            rationale="Need main synthesis topic.",
+            evidence_target=1,
+            search_terms=["fusion commercialization status"],
+            status=TopicStatus.COMPLETED,
+        )
+    ]
+    state["curated_evidence"] = [
+        CuratedEvidence(
+            evidence_id="evidence_fusion",
+            topic_id="topic_fusion",
+            canonical_claim="Fusion commercialization remains pre-scale.",
+            summary="Most efforts remain in pilot or demonstration stages.",
+            support_quotes=["Most efforts remain in pilot or demonstration stages."],
+            sources=[EvidenceSourceRef(url="https://example.com/fusion", title="Fusion report", locator="p2")],
+            exact_generation_tokens=24,
+            prompt_fit_tokens_estimate=20,
+            confidence=ConfidenceLevel.MEDIUM,
+            canonical_fingerprint="fusion-pre-scale",
+        )
+    ]
+    state["synthesis_budget"] = manager.synthesis_budget(state)
+
+    context = manager.synthesizer_context(state)
+
+    assert context.query == state["query"]
+    assert context.evidentiary[0].evidence_id == "evidence_fusion"
+    assert state["synthesis_budget"].available_prompt_tokens > 0
+    assert state["synthesis_budget"].final_context_full is False

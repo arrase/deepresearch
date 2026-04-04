@@ -1,11 +1,18 @@
-Return a JSON object:
+Return one JSON object:
 {
   "subqueries": [
-    {"id": "sq_1", "question": "...", "rationale": "...", "priority": 1, "evidence_target": 3, "success_criteria": ["..."], "search_terms": ["..."]}
+    {"id": "topic_1", "question": "...", "rationale": "...", "priority": 1, "evidence_target": 1, "success_criteria": ["..."], "search_terms": ["..."]}
   ],
   "search_intents": [
-    {"query": "...", "rationale": "...", "subquery_ids": ["sq_1"]}
+    {"query": "...", "rationale": "...", "topic_ids": ["topic_1"]}
   ],
   "hypotheses": ["..."]
 }
-JSON ONLY. No talk. Do not include extra keys.
+Rules:
+- Keep the top-level key name `subqueries` for compatibility with the runtime.
+- Each item inside `subqueries` is a research topic.
+- priority must be an integer from 1 to 5.
+- evidence_target must be an integer from 1 to 3.
+- Each list may be empty.
+- No extra keys.
+- JSON only.

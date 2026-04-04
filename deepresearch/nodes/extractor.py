@@ -6,12 +6,13 @@ from typing import TYPE_CHECKING
 
 from langsmith import traceable
 
-from ..core.utils import rank_subqueries_for_source, select_relevant_chunks, split_text, summarize_evidence
-from ..state import AtomicEvidence, BrowserPageStatus, ResearchState
+from ..core.utils import select_relevant_chunks, split_text, summarize_evidence
+from ..state import BrowserPageStatus, EvidenceDraft, ResearchState
 from .base import log_node_activity, log_runtime_event
 
 if TYPE_CHECKING:
     from ..runtime import ResearchRuntime
+
 
 _MAX_EXTRACTION_CONTENT = 4000
 
@@ -23,80 +24,56 @@ class ExtractorNode:
     @traceable(name="extractor-node")
     @log_node_activity("extractor", "Extracting from: {query}")
     def __call__(self, state: ResearchState) -> dict:
-        browser_res = state.get("current_browser_result")
-        candidate = state.get("current_candidate")
-        if not (browser_res and candidate) or browser_res.status not in {
+        browser_result = state.get("current_browser_result")
+        active_topic_id = state.get("active_topic_id")
+        topic = next((item for item in state["plan"] if item.id == active_topic_id), None)
+        if browser_result is None or topic is None or browser_result.status not in {
             BrowserPageStatus.USEFUL,
             BrowserPageStatus.PARTIAL,
         }:
-            return {"latest_evidence": []}
+            return {"extracted_evidence_buffer": []}
 
-        source_text = "\n".join(
-            part
-            for part in [
-                candidate.title,
-                candidate.snippet,
-                browser_res.title,
-                browser_res.excerpt,
-                browser_res.content[:_MAX_EXTRACTION_CONTENT],
-            ]
-            if part
-        )
-        targets = rank_subqueries_for_source(
-            state["active_subqueries"],
-            text=source_text,
-            candidate_subquery_ids=candidate.subquery_ids or browser_res.candidate_subquery_ids,
-        )
-        if not targets:
-            return {"latest_evidence": []}
-        terms = [t for sq in state["active_subqueries"] if sq.id in targets for t in (sq.search_terms or [sq.question])]
-
-        chunks = select_relevant_chunks(split_text(browser_res.content), terms, 10)
-        local_source = "\n\n".join(chunks)[:self._runtime.config.browser.max_content_chars]
-
-        context = self._runtime.context_manager.extractor_context(state, targets, local_source)
+        terms = topic.search_terms or [topic.question]
+        chunks = select_relevant_chunks(split_text(browser_result.content), terms, 8)
+        max_chars = min(self._runtime.config.browser.max_content_chars, _MAX_EXTRACTION_CONTENT)
+        local_source = "\n\n".join(chunks)[:max_chars]
+        context = self._runtime.context_manager.extractor_context(state, topic, local_source)
         payload, usage = self._runtime.llm_workers.extract_evidence_with_usage(context)
 
-        latest = []
-        target_subqueries = [sq for sq in state["active_subqueries"] if sq.id in targets]
-        for item in payload.evidences:
-            best_id = targets[0]
-            if len(targets) > 1:
-                match_ids = rank_subqueries_for_source(
-                    target_subqueries,
-                    text=f"{item.claim} {item.summary}",
-                    candidate_subquery_ids=targets,
-                    limit=1,
-                )
-                if match_ids:
-                    best_id = match_ids[0]
-            latest.append(
-                AtomicEvidence(
-                    subquery_id=best_id,
-                    source_url=browser_res.final_url or browser_res.url,
-                    source_title=candidate.title or browser_res.title or "Unknown Source",
-                    **item.model_dump(),
-                )
+        drafts = [
+            EvidenceDraft(
+                topic_id=topic.id,
+                source_url=browser_result.final_url or browser_result.url,
+                source_title=browser_result.title or "Unknown Source",
+                claim=item.claim,
+                quotation=item.quotation,
+                locator=item.citation_locator,
+                summary=item.summary,
+                extractor_output_tokens=usage.get("output_tokens", 0),
+                extractor_input_tokens=usage.get("input_tokens", 0),
+                extraction_confidence=item.confidence,
+                relevance_score=item.relevance_score,
+                caveats=item.caveats,
             )
+            for item in payload.evidences
+        ]
         llm_usage = {**state.get("llm_usage", {}), "extractor": usage}
-
         log_runtime_event(
             self._runtime,
             "[extractor] Extraction complete",
             verbosity=1,
-            url=browser_res.url,
-            count=len(latest),
+            url=browser_result.url,
+            count=len(drafts),
             **usage,
         )
         log_runtime_event(
             self._runtime,
-            "[extractor] Processed page chunks and extracted evidence",
+            "[extractor] Extracted evidence drafts",
             verbosity=3,
-            target_subquery_ids=targets,
-            selected_chunks=[{"index": index, "preview": chunk} for index, chunk in enumerate(chunks[:6], start=1)],
-            extracted_evidence=summarize_evidence(latest),
+            topic_id=topic.id,
+            extracted_evidence=summarize_evidence([]),
         )
         return {
-            "latest_evidence": latest,
+            "extracted_evidence_buffer": drafts,
             "llm_usage": llm_usage,
         }

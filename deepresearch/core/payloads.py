@@ -7,32 +7,37 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
-from ..state import ConfidenceLevel, Contradiction, Gap, SearchIntent, Subquery, coerce_bool
+from ..state import ConfidenceLevel, Contradiction, Gap, ResearchTopic, SearchIntent, TopicStatus, coerce_bool
 
 
 class PlannerPayload(BaseModel):
-    subqueries: list[Subquery] = Field(default_factory=list)
+    subqueries: list[ResearchTopic] = Field(default_factory=list)
     search_intents: list[SearchIntent] = Field(default_factory=list)
     hypotheses: list[str] = Field(default_factory=list)
 
     @field_validator("subqueries", mode="before")
     @classmethod
-    def validate_subqueries(cls, v: Any) -> Any:
-        if not isinstance(v, list):
+    def validate_topics(cls, value: Any) -> Any:
+        if not isinstance(value, list):
             return []
-        cleaned: list[Subquery | dict[str, Any]] = []
-        for sq in v:
-            if isinstance(sq, Subquery):
-                cleaned.append(sq)
+        cleaned: list[ResearchTopic | dict[str, Any]] = []
+        for topic in value:
+            if isinstance(topic, ResearchTopic):
+                cleaned.append(topic)
                 continue
-            if not isinstance(sq, dict):
+            if not isinstance(topic, dict):
                 continue
-
-            sq_data = dict(sq)
-            # Ensure search_terms is populated
-            if not sq_data.get("search_terms"):
-                sq_data["search_terms"] = [sq_data.get("question", "")]
-            cleaned.append(sq_data)
+            topic_data = dict(topic)
+            if not topic_data.get("search_terms"):
+                topic_data["search_terms"] = [topic_data.get("question", "")]
+            status = str(topic_data.get("status", TopicStatus.PENDING.value)).strip().lower()
+            if status == "active":
+                topic_data["status"] = TopicStatus.PENDING.value
+            elif status == "resolved":
+                topic_data["status"] = TopicStatus.COMPLETED.value
+            elif status == "discarded":
+                topic_data["status"] = TopicStatus.EXHAUSTED.value
+            cleaned.append(topic_data)
         return cleaned
 
 
@@ -44,15 +49,14 @@ class EvidenceDraft(BaseModel):
     relevance_score: float = Field(default=0.5, ge=0.0, le=1.0)
     confidence: ConfidenceLevel = ConfidenceLevel.MEDIUM
     caveats: list[str] = Field(default_factory=list)
-    tags: list[str] = Field(default_factory=list)
 
     @field_validator("relevance_score", mode="before")
     @classmethod
-    def coerce_float(cls, v: Any) -> float:
-        if isinstance(v, str):
-            match = re.search(r"\d+(?:\.\d+)?", v)
+    def coerce_float(cls, value: Any) -> float:
+        if isinstance(value, str):
+            match = re.search(r"\d+(?:\.\d+)?", value)
             return float(match.group(0)) if match else 0.5
-        return float(v) if isinstance(v, (int, float)) else 0.5
+        return float(value) if isinstance(value, (int, float)) else 0.5
 
 
 class EvidencePayload(BaseModel):
@@ -66,7 +70,43 @@ class CoveragePayload(BaseModel):
     is_sufficient: bool = False
     rationale: str = ""
 
+    @field_validator("contradictions", mode="before")
+    @classmethod
+    def normalize_contradictions(cls, value: Any) -> Any:
+        if not isinstance(value, list):
+            return []
+        normalized: list[Contradiction | dict[str, Any]] = []
+        for item in value:
+            if isinstance(item, Contradiction):
+                normalized.append(item)
+                continue
+            if not isinstance(item, dict):
+                continue
+            contradiction_data = dict(item)
+            if "topic" in contradiction_data and "topic_id" not in contradiction_data:
+                contradiction_data["topic_id"] = contradiction_data.pop("topic")
+            normalized.append(contradiction_data)
+        return normalized
+
+    @field_validator("open_gaps", mode="before")
+    @classmethod
+    def normalize_gaps(cls, value: Any) -> Any:
+        if not isinstance(value, list):
+            return []
+        normalized: list[Gap | dict[str, Any]] = []
+        for item in value:
+            if isinstance(item, Gap):
+                normalized.append(item)
+                continue
+            if not isinstance(item, dict):
+                continue
+            gap_data = dict(item)
+            if "subquery_id" in gap_data and "topic_id" not in gap_data:
+                gap_data["topic_id"] = gap_data.pop("subquery_id")
+            normalized.append(gap_data)
+        return normalized
+
     @field_validator("is_sufficient", mode="before")
     @classmethod
-    def validate_bool(cls, v: Any) -> bool:
-        return coerce_bool(v)
+    def validate_bool(cls, value: Any) -> bool:
+        return coerce_bool(value)

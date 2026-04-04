@@ -218,7 +218,10 @@ class LLMWorkers:
     @traceable(name="extractor-llm")
     def extract_evidence(self, context: NodeContext) -> EvidencePayload:
         vars = context.model_dump()
-        vars["evidentiary"] = "\n".join(f"- {e.claim} | {e.source_title}" for e in context.evidentiary)
+        vars["evidentiary"] = "\n".join(
+            f"- {e.canonical_claim} | {e.sources[0].title if e.sources else 'Unknown Source'}"
+            for e in context.evidentiary
+        )
         try:
             payload, _ = self._parse_response(
                 "extractor",
@@ -233,7 +236,10 @@ class LLMWorkers:
     @traceable(name="extractor-llm-with-usage")
     def extract_evidence_with_usage(self, context: NodeContext) -> tuple[EvidencePayload, dict[str, int]]:
         vars = context.model_dump()
-        vars["evidentiary"] = "\n".join(f"- {e.claim} | {e.source_title}" for e in context.evidentiary)
+        vars["evidentiary"] = "\n".join(
+            f"- {e.canonical_claim} | {e.sources[0].title if e.sources else 'Unknown Source'}"
+            for e in context.evidentiary
+        )
         try:
             return self._parse_response(
                 "extractor",
@@ -253,7 +259,11 @@ class LLMWorkers:
         vars = context.model_dump()
         _domain = self._extract_domain_label
         vars["evidentiary"] = "\n".join(
-            f"- {e.subquery_id}: {e.claim} | source={e.source_title} | domain={_domain(e.source_url)}"
+            (
+                f"- {e.topic_id}: {e.canonical_claim} | "
+                f"source={e.sources[0].title if e.sources else 'Unknown Source'} | "
+                f"domain={_domain(e.sources[0].url) if e.sources else 'unknown'}"
+            )
             for e in context.evidentiary
         )
         try:
@@ -272,7 +282,11 @@ class LLMWorkers:
         vars = context.model_dump()
         _domain = self._extract_domain_label
         vars["evidentiary"] = "\n".join(
-            f"- {e.subquery_id}: {e.claim} | source={e.source_title} | domain={_domain(e.source_url)}"
+            (
+                f"- {e.topic_id}: {e.canonical_claim} | "
+                f"source={e.sources[0].title if e.sources else 'Unknown Source'} | "
+                f"domain={_domain(e.sources[0].url) if e.sources else 'unknown'}"
+            )
             for e in context.evidentiary
         )
         try:
@@ -292,10 +306,22 @@ class LLMWorkers:
     @traceable(name="synthesizer-llm-with-usage")
     def synthesize_report_with_usage(self, context: NodeContext, query: str) -> tuple[FinalReport, dict[str, int]]:
         vars = context.model_dump()
-        vars.update({
-            "query": query,
-            "evidentiary": "\n".join(f"- {e.id}: {e.claim}" for e in context.evidentiary),
-        })
+        _domain = self._extract_domain_label
+        vars.update(
+            {
+                "query": query,
+                "evidentiary": "\n".join(
+                    (
+                        f"- {e.evidence_id} | topic={e.topic_id} | claim={e.canonical_claim} | "
+                        f"summary={e.summary} | confidence={e.confidence.value} | "
+                        f"sources={'; '.join(
+                            f'{source.title} @ {_domain(source.url)}' for source in e.sources[:2]
+                        ) or 'unknown'}"
+                    )
+                    for e in context.evidentiary
+                ),
+            }
+        )
 
         prompt = self._prompt_loader.render(
             "synthesizer",
@@ -329,6 +355,6 @@ class LLMWorkers:
 
         return FinalReport(
             query=query, executive_answer="See report.",
-            cited_sources=cited_sources, evidence_ids=[e.id for e in context.evidentiary],
+            cited_sources=cited_sources, evidence_ids=[e.evidence_id for e in context.evidentiary],
             markdown_report=md
         ), usage

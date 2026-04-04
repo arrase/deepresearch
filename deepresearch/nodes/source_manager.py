@@ -1,13 +1,15 @@
-"""Source manager node implementation."""
+"""Topic selection and single-source search node."""
 
 from __future__ import annotations
 
 from collections import Counter
-from typing import TYPE_CHECKING, TypedDict
+from typing import TYPE_CHECKING
 
 from langsmith import traceable
 
 from ..core.utils import (
+    build_search_query,
+    choose_active_topic,
     deduplicate_candidates,
     prune_queue_by_domain,
     reformulate_queries,
@@ -15,7 +17,7 @@ from ..core.utils import (
     summarize_gaps,
     summarize_search_candidates,
 )
-from ..state import DiscardedSource, ResearchState, SearchCandidate, SourceDiscardReason
+from ..state import DiscardedSource, ResearchState, SearchAttempt, TopicStatus
 from .base import log_node_activity, log_runtime_event
 
 if TYPE_CHECKING:
@@ -26,218 +28,146 @@ class SourceManagerNode:
     def __init__(self, runtime: ResearchRuntime) -> None:
         self._runtime = runtime
 
-    def _build_query_specs(self, state: ResearchState) -> list[QuerySpec]:
-        query_specs: dict[str, QuerySpec] = {}
-
-        def register_query(query: str, subquery_ids: list[str], discovered_via: str) -> None:
-            if not query.strip() or query in state["completed_search_queries"]:
-                return
-            spec = query_specs.get(query)
-            if spec is None:
-                query_specs[query] = {
-                    "query": query,
-                    "subquery_ids": list(dict.fromkeys(subquery_ids)),
-                    "discovered_via": discovered_via,
-                }
-                return
-            spec["subquery_ids"] = list(dict.fromkeys([*spec["subquery_ids"], *subquery_ids]))
-
-        for gap in reversed(state["open_gaps"]):
-            for query in gap.suggested_queries:
-                register_query(query, [gap.subquery_id], "gap")
+    def _select_query(self, state: ResearchState, topic_id: str, fallback_query: str) -> str:
         for intent in reversed(state["search_intents"]):
-            register_query(intent.query, intent.subquery_ids, "intent")
-        for subquery in reversed(state["active_subqueries"]):
-            register_query(subquery.question, [subquery.id], "subquery")
+            if topic_id in intent.topic_ids and intent.query not in state["completed_search_queries"]:
+                return intent.query
+        if fallback_query not in state["completed_search_queries"]:
+            return fallback_query
+        variants = reformulate_queries(fallback_query, set(state["completed_search_queries"]), fallback_query.split())
+        for variant in variants:
+            if variant not in state["completed_search_queries"]:
+                return variant
+        return fallback_query
 
-        # Reformulate queries for subqueries with zero evidence after stagnation
-        if state["cycles_without_new_evidence"] >= 2:
-            completed = set(state["completed_search_queries"]) | set(query_specs.keys())
-            evidence_by_sq = Counter(e.subquery_id for e in state["atomic_evidence"])
-            for sq in state["active_subqueries"]:
-                if evidence_by_sq[sq.id] == 0 and sq.search_terms:
-                    for variant in reformulate_queries(state["query"], completed, sq.search_terms):
-                        register_query(variant, [sq.id], "gap")
-                        completed.add(variant)
-
-        return list(query_specs.values())
-
-    def _prune_and_cap_queue(
-        self,
-        state: ResearchState,
-        queue: list[SearchCandidate],
-    ) -> tuple[list[SearchCandidate], list[DiscardedSource]]:
-        """Prune over-represented domains and cap queue size."""
-        pruned_queue, pruned_entries = prune_queue_by_domain(
-            queue, state["atomic_evidence"]
-        )
-        max_size = self._runtime.config.search.max_queue_size
-        extra_discarded: list[DiscardedSource] = []
-        for url, reason, note in pruned_entries:
-            extra_discarded.append(DiscardedSource(url=url, reason=reason, note=note))
-        if len(pruned_queue) > max_size:
-            for c in pruned_queue[max_size:]:
-                extra_discarded.append(
-                    DiscardedSource(
-                        url=c.url,
-                        reason=SourceDiscardReason.LOW_VALUE,
-                        note="Queue cap exceeded",
-                    )
-                )
-            pruned_queue = pruned_queue[:max_size]
-        return pruned_queue, extra_discarded
+    def _mark_active_topic(self, state: ResearchState, topic_id: str) -> list:
+        updated = []
+        for topic in state["plan"]:
+            if topic.id == topic_id:
+                updated.append(topic.model_copy(update={"status": TopicStatus.IN_PROGRESS}))
+            elif topic.status == TopicStatus.IN_PROGRESS:
+                updated.append(topic.model_copy(update={"status": TopicStatus.PENDING}))
+            else:
+                updated.append(topic)
+        return updated
 
     @traceable(name="source-manager-node")
     @log_node_activity("source_manager", "Managing: {query}")
     def __call__(self, state: ResearchState) -> dict:
-        query_specs = self._build_query_specs(state)
-        gap_query_specs = [spec for spec in query_specs if spec["discovered_via"] == "gap"]
-
-        if state["search_queue"] and not gap_query_specs:
-            queue, extra_discarded = self._prune_and_cap_queue(state, state["search_queue"])
-            if not queue:
-                gap_query_specs = []  # fall through to search below
-            else:
-                next_c = queue[0]
-                log_runtime_event(self._runtime, "[source_manager] Queue next", verbosity=1, url=next_c.url)
-                log_runtime_event(
-                    self._runtime,
-                    "[source_manager] Selected queued candidate",
-                    verbosity=3,
-                    candidate=summarize_search_candidates([next_c], limit=1),
-                    remaining_queue=len(queue) - 1,
-                )
-                return {
-                    "search_queue": queue[1:],
-                    "discarded_sources": state["discarded_sources"] + extra_discarded,
-                    "current_candidate": next_c,
-                    "current_browser_result": None,
-                    "latest_evidence": [],
-                    "progress_score": 0,
-                    "iteration": state["iteration"] + 1,
-                    "technical_reason": None,
-                }
-
-        selected_specs = (gap_query_specs or query_specs)[:self._runtime.config.search.max_queries_per_cycle]
-        queries = [str(spec["query"]) for spec in selected_specs]
-
-        if not selected_specs:
-            log_runtime_event(self._runtime, "[source_manager] No queries left", verbosity=1)
-            log_runtime_event(
-                self._runtime,
-                "[source_manager] No actionable queries available",
-                verbosity=3,
-                open_gaps=summarize_gaps(state["open_gaps"]),
-                remaining_intents=[intent.query for intent in state["search_intents"][:5]],
-            )
+        active_topic = choose_active_topic(state["plan"], state["topic_attempts"], state["topic_coverage"])
+        if active_topic is None:
             return {
-                "iteration": state["iteration"] + 1,
-                "current_candidate": None,
-                "current_browser_result": None,
-                "latest_evidence": [],
-                "progress_score": 0,
-                "technical_reason": "no_queries",
+                "current_batch": [],
+                "candidate_queue": [],
+                "technical_reason": "no_topics",
+                "replan_requested": False,
+                "current_iteration": state["current_iteration"] + 1,
             }
 
-        # Adaptive results_per_query: increase when stagnating
-        base_results = self._runtime.config.search.results_per_query
-        if state["cycles_without_new_evidence"] >= 2:
-            adaptive_results = min(base_results * 2, 15)
-        else:
-            adaptive_results = base_results
+        query = self._select_query(state, active_topic.id, build_search_query(active_topic))
+        plan = self._mark_active_topic(state, active_topic.id)
+        topic_attempts = dict(state["topic_attempts"])
+        topic_attempts[active_topic.id] = topic_attempts.get(active_topic.id, 0) + 1
 
-        raw: list[SearchCandidate] = []
-        for spec in selected_specs:
-            query = str(spec["query"])
-            subquery_ids = spec["subquery_ids"]
-            try:
-                results = self._runtime.search_client.search(query, max_results=adaptive_results)
-                for candidate in results:
-                    candidate.subquery_ids = list(dict.fromkeys([*candidate.subquery_ids, *subquery_ids]))
-                    if candidate.discovered_via == "search":
-                        candidate.discovered_via = str(spec["discovered_via"])
-                raw.extend(results)
-            except (ValueError, OSError, RuntimeError) as e:
-                log_runtime_event(
-                    self._runtime,
-                    "[source_manager] Search error",
-                    verbosity=1,
-                    query=query,
-                    error=str(e),
-                )
-                return {
-                    "completed_search_queries": [*state["completed_search_queries"], query],
-                    "current_candidate": None,
-                    "current_browser_result": None,
-                    "latest_evidence": [],
-                    "progress_score": 0,
-                    "technical_reason": "search_error",
+        raw_results = self._runtime.search_client.search(
+            query,
+            max_results=self._runtime.config.search.results_per_query,
+        )
+        prepared_results = [
+            result.model_copy(
+                update={
+                    "topic_ids": list(dict.fromkeys([*result.topic_ids, active_topic.id])),
+                    "query": query,
                 }
-
-        candidate_pool = [*raw, *state["search_queue"]]
-        deduped, discarded = deduplicate_candidates(candidate_pool, state["visited_urls"])
-        new_discarded = state["discarded_sources"] + [DiscardedSource(url=u, reason=r, note=n) for u, r, n in discarded]
-
-        domains = Counter(c.domain for c in state["search_queue"])
+            )
+            for result in raw_results
+        ]
+        deduped, discarded, repeated_urls = deduplicate_candidates(
+            [*prepared_results, *state["candidate_queue"]],
+            state["visited_urls"],
+        )
+        domains = Counter(candidate.domain for candidate in state["candidate_queue"])
         ranked = sorted(
-            [
-                score_candidate(c, state["active_subqueries"], state["visited_urls"], domains)
-                for c in deduped
-            ],
-            key=lambda x: x.score,
+            [score_candidate(candidate, active_topic, state["visited_urls"], domains) for candidate in deduped],
+            key=lambda item: item.score,
             reverse=True,
+        )
+        ranked, pruned = prune_queue_by_domain(ranked, state["curated_evidence"])
+        discarded_sources = [
+            *state["discarded_sources"],
+            *[
+                DiscardedSource(url=url, reason=reason, note=note)
+                for url, reason, note in [*discarded, *pruned]
+            ],
+        ]
+        search_attempt = SearchAttempt(
+            topic_id=active_topic.id,
+            query=query,
+            iteration=state["current_iteration"] + 1,
+            discovered_urls=len(raw_results),
+            accepted_urls=min(len(ranked), self._runtime.config.runtime.search_batch_size),
+            repeated_urls=repeated_urls,
+            empty_result=not ranked,
+            technical_error=None if ranked else "no_results",
         )
 
         if not ranked:
-            log_runtime_event(self._runtime, "[source_manager] No results", verbosity=1)
             log_runtime_event(
                 self._runtime,
-                "[source_manager] Search produced no new ranked candidates",
-                verbosity=3,
-                queries=queries,
-                discarded_count=len(discarded),
+                "[source_manager] Search produced no new candidates",
+                verbosity=1,
+                topic_id=active_topic.id,
+                query=query,
             )
             return {
-                "completed_search_queries": [*state["completed_search_queries"], *queries],
-                "discarded_sources": new_discarded,
-                "current_candidate": None,
-                "current_browser_result": None,
-                "latest_evidence": [],
-                "progress_score": 0,
-                "iteration": state["iteration"] + 1,
+                "plan": plan,
+                "active_topic_id": active_topic.id,
+                "topic_attempts": topic_attempts,
+                "search_history": [*state["search_history"], search_attempt],
+                "completed_search_queries": [*state["completed_search_queries"], query],
+                "failed_queries": [*state["failed_queries"], query],
+                "discarded_sources": discarded_sources,
+                "candidate_queue": [],
+                "current_batch": [],
+                "current_iteration": state["current_iteration"] + 1,
                 "technical_reason": "no_results",
+                "replan_requested": self._runtime.config.runtime.allow_dynamic_replan,
+                "new_evidence_in_cycle": 0,
+                "merged_evidence_in_cycle": 0,
+                "useful_source_in_cycle": False,
             }
 
-        next_c = ranked[0]
-        remaining_queue = ranked[1:]
-
-        # Prune and cap queue after search
-        remaining_queue, cap_discarded = self._prune_and_cap_queue(state, remaining_queue)
-        new_discarded = new_discarded + cap_discarded
-
-        log_runtime_event(self._runtime, "[source_manager] Discovered", verbosity=1, url=next_c.url, count=len(ranked))
+        batch_size = self._runtime.config.runtime.search_batch_size
+        current_batch = ranked[:batch_size]
+        remaining_queue = ranked[batch_size:]
+        log_runtime_event(self._runtime, "[source_manager] Discovered candidate", verbosity=1, url=current_batch[0].url)
         log_runtime_event(
             self._runtime,
             "[source_manager] Ranked search candidates",
             verbosity=3,
-            queries=queries,
+            topic_id=active_topic.id,
+            query=query,
             top_candidates=summarize_search_candidates(ranked),
-            discarded_count=len(discarded),
+            open_gaps=summarize_gaps(state["open_gaps"]),
         )
         return {
-            "completed_search_queries": [*state["completed_search_queries"], *queries],
-            "discarded_sources": new_discarded,
-            "search_queue": remaining_queue,
-            "current_candidate": next_c,
-            "current_browser_result": None,
-            "latest_evidence": [],
-            "progress_score": 0,
-            "iteration": state["iteration"] + 1,
+            "plan": [
+                topic.model_copy(update={"last_query": query}) if topic.id == active_topic.id else topic
+                for topic in plan
+            ],
+            "active_topic_id": active_topic.id,
+            "topic_attempts": topic_attempts,
+            "search_history": [*state["search_history"], search_attempt],
+            "completed_search_queries": [*state["completed_search_queries"], query],
+            "candidate_queue": remaining_queue,
+            "current_batch": current_batch,
+            "discarded_sources": discarded_sources,
+            "current_iteration": state["current_iteration"] + 1,
             "technical_reason": None,
+            "replan_requested": False,
+            "new_evidence_in_cycle": 0,
+            "merged_evidence_in_cycle": 0,
+            "useful_source_in_cycle": False,
+            "current_browser_result": None,
+            "extracted_evidence_buffer": [],
         }
-
-
-class QuerySpec(TypedDict):
-    query: str
-    subquery_ids: list[str]
-    discovered_via: str

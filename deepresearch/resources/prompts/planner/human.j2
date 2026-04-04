@@ -1,47 +1,45 @@
-Primary question: {{ query }}
+Research question:
+{{ query }}
 
 {% if not has_subqueries %}
-No subqueries exist yet. You must produce the initial agenda.
-
-Task: Decompose the question into concrete subqueries, working hypotheses, and initial search queries.
+Current plan: none.
 {% else %}
-Current Progress:
+Current dossier:
 {{ dossier_context }}
 
-Coverage Snapshot:
+Coverage summary:
 {{ coverage_summary }}
 
-Source Balance Snapshot:
+Source balance:
 {{ source_balance_summary }}
 
-Active subqueries:
+Open topics:
 {{ active_subqueries }}
 
-Resolved subqueries:
+Completed topics:
 {{ resolved_subqueries }}
 
 Open gaps:
 {{ open_gaps }}
-
-Task: Review the current progress and open gaps. You may add new subqueries to the agenda or refine existing ones to improve depth and coverage. Ensure new subqueries do not overlap with resolved ones unless a deep-dive is necessary.
 {% endif %}
 
-Write every generated field in the SAME language as the primary question, including subquery text, rationale, search terms, search intents, and hypotheses.
+Task:
+Build or refine a compact research agenda for this question.
 
-Reasoning policy:
-- First infer what kind of answer the user is asking for (for example: explanation, comparison, recommendation, chronology, current-state snapshot, process, profile, risk assessment, or another open-ended structure implied by the question).
-- Then make sure the agenda covers the core facets needed for that answer shape instead of over-focusing on a single angle, source family, or entity.
-- Use the coverage and source-balance snapshots to notice empty facets, thin subqueries, and one-sided evidence before proposing more searches.
+Rules:
+- Think in research topics, not final prose.
+- Cover only the major facets needed to answer the question well.
+- Prefer 2 to 4 non-overlapping topics.
+- Reuse the current plan when it already covers the question. Add new topics only for real uncovered gaps.
+- Use the SAME language as the research question for question, rationale, success_criteria, search_terms, search_intents, and hypotheses.
+- Keep every generated string short, concrete, and easy for a small model to follow later.
+- search_terms must be short web-search phrases, not long sentences.
+- search_intents must point to topic ids through topic_ids.
+- evidence_target should usually be 1 or 2. Use 3 only when the topic clearly needs cross-source confirmation.
+- Do not duplicate a completed topic unless a gap explicitly requires a deeper follow-up.
+- If a section needs no changes, return an empty list for that section.
 
-Ambiguity Mapping:
-If the primary question is vague or has multiple interpretations, generate subqueries that map these different facets (e.g., economic, technical, social impact) to ensure a comprehensive research agenda.
-
-Limits:
-- At most 12 subqueries and 10 search intents.
-- evidence_target per subquery should be between 3 and 8, depending on complexity.
-- Use stable ids such as sq_1 and sq_2.
-- evidence_target must be a small integer, not prose.
-- rationale must be concise but clear.
-- success_criteria must contain at most 5 short phrases per subquery.
-- search_terms must contain at most 5 short search queries per subquery.
-- hypotheses must contain at most 5 short sentences.
+Output discipline:
+- Return valid JSON only.
+- No commentary.
+- No extra keys.

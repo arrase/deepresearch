@@ -36,14 +36,10 @@ def build_graph(runtime: ResearchRuntime) -> CompiledResearchGraph:
     graph.add_conditional_edges(
         "browser",
         _route_after_browser,
-        {"extractor": "extractor", "evaluator": "evaluator", "source_manager": "source_manager"},
+        {"extractor": "extractor", "evaluator": "evaluator"},
     )
     graph.add_edge("extractor", "context_manager")
-    graph.add_conditional_edges(
-        "context_manager",
-        lambda s: _route_after_context_manager(s, runtime),
-        {"source_manager": "source_manager", "evaluator": "evaluator"},
-    )
+    graph.add_edge("context_manager", "evaluator")
     graph.add_conditional_edges(
         "evaluator",
         _route_after_evaluator,
@@ -54,31 +50,19 @@ def build_graph(runtime: ResearchRuntime) -> CompiledResearchGraph:
 
 
 def _route_after_source_manager(state: ResearchState) -> str:
-    return "browser" if state.get("current_candidate") else "evaluator"
+    return "browser" if state["current_batch"] else "evaluator"
 
 
 def _route_after_browser(state: ResearchState) -> str:
-    res = state.get("current_browser_result")
-    if not res:
-        return "source_manager"
-    if res.status in {BrowserPageStatus.USEFUL, BrowserPageStatus.PARTIAL}:
+    result = state.get("current_browser_result")
+    if result and result.status in {BrowserPageStatus.USEFUL, BrowserPageStatus.PARTIAL}:
         return "extractor"
-    return "evaluator" if state.get("technical_reason") else "source_manager"
-
-
-def _route_after_context_manager(state: ResearchState, runtime: ResearchRuntime) -> str:
-    batch_size = runtime.config.runtime.eval_batch_size
-    visited_since = state.get("urls_visited_since_eval", 0)
-    has_new_evidence = bool(state.get("latest_evidence"))
-    has_queue = bool(state.get("search_queue"))
-    if visited_since < batch_size and has_queue and not has_new_evidence:
-        return "source_manager"
     return "evaluator"
 
 
 def _route_after_evaluator(state: ResearchState) -> str:
-    if state["is_sufficient"]:
+    if state.get("stop_reason"):
         return "synthesizer"
-    if state.get("technical_reason"):
+    if state.get("replan_requested") or not state["plan"]:
         return "planner"
-    return "planner" if not state["active_subqueries"] else "source_manager"
+    return "source_manager"

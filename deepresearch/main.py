@@ -15,18 +15,16 @@ from .observability import configure_logging, langsmith_tracing
 from .output_utils import generate_pdf
 from .runtime import ResearchRuntime, SearchClientLike
 from .state import build_initial_state
-from .tools import DuckDuckGoSearchClient, LightpandaDockerManager, TavilySearchClient
+from .tools import LightpandaDockerManager, TavilySearchClient
 
 logger = logging.getLogger(__name__)
 
 
 def build_runtime(config: ResearchConfig) -> ResearchRuntime:
     search_client: SearchClientLike
-    if config.search.backend == "tavily":
-        search_client = TavilySearchClient(config.search)
-    else:
-        search_client = DuckDuckGoSearchClient(config.search)
-
+    if config.search.backend != "tavily":
+        raise ValueError(f"Unsupported search backend: {config.search.backend}")
+    search_client = TavilySearchClient(config.search)
     return ResearchRuntime(
         config=config,
         context_manager=ContextManager(config),
@@ -61,7 +59,6 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument("--discord", action="store_true", help="Send the final report to Discord")
-
     return parser.parse_args()
 
 
@@ -93,10 +90,7 @@ def cli() -> int:
             config.config_root,
         )
 
-    initial_state = build_initial_state(
-        args.query,
-        max_iterations=config.runtime.max_iterations,
-    )
+    initial_state = build_initial_state(args.query, max_iterations=config.runtime.max_iterations)
     graph = build_graph(runtime)
     trace_metadata = {
         "model_name": config.model.model_name,
@@ -106,52 +100,32 @@ def cli() -> int:
     with langsmith_tracing(config, metadata=trace_metadata):
         final_state = graph.invoke(
             initial_state,
-            config={
-                "run_name": "deepresearch",
-                "tags": ["cli"],
-                "metadata": trace_metadata,
-            },
+            config={"run_name": "deepresearch", "tags": ["cli"], "metadata": trace_metadata},
         )
     final_report = final_state.get("final_report")
-
     if final_report is None:
         print(json.dumps({"error": "Failed to generate final report"}, indent=2, ensure_ascii=True))
         return 2
 
-    # File output logic:
-    # 1. If --markdown is explicitly provided, use it.
-    # 2. If --pdf is explicitly provided, use it.
-    # 3. If NEITHER --markdown NOR --pdf is provided AND NOT --discord, default to markdown report.md.
-    # 4. If --discord IS used and no other output is specified, DO NOT write to disk.
     if args.markdown:
         output_path = Path(args.markdown)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(final_report.markdown_report, encoding="utf-8")
-        if config.runtime.verbosity >= 1:
-            logger.info("Final markdown report generated and saved to: %s", output_path)
     elif args.pdf:
         output_path = Path(args.pdf)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         generate_pdf(final_report.markdown_report, output_path)
-        if config.runtime.verbosity >= 1:
-            logger.info("Final PDF report generated and saved to: %s", output_path)
     elif not args.discord:
         output_path = Path("report.md")
         output_path.write_text(final_report.markdown_report, encoding="utf-8")
-        if config.runtime.verbosity >= 1:
-            logger.info("Final markdown report generated and saved to: %s", output_path)
 
     if args.discord:
         import asyncio
 
         from .outputs.discord import send_discord_report
 
-        logger.info("Sending report to Discord...")
         success = asyncio.run(send_discord_report(config.discord, final_report))
-
-        if success:
-            logger.info("Report sent to Discord successfully.")
-        else:
+        if not success:
             logger.error("Failed to send report to Discord. Check your configuration.")
 
     print(final_report.executive_answer)

@@ -1,4 +1,4 @@
-from deepresearch.state import build_initial_state
+from deepresearch.state import SynthesisBudget, build_initial_state
 
 
 def test_build_initial_state_has_required_fields() -> None:
@@ -8,15 +8,16 @@ def test_build_initial_state_has_required_fields() -> None:
     )
     assert state["query"].startswith("What is")
     assert state["max_iterations"] == 6
-    assert state["atomic_evidence"] == []
+    assert state["plan"] == []
+    assert state["active_topic_id"] is None
+    assert state["curated_evidence"] == []
     assert state["llm_usage"] == {}
-    assert state["synthesis_budget"] == {}
+    assert isinstance(state["synthesis_budget"], SynthesisBudget)
+    assert state["synthesis_budget"].final_context_full is False
     assert state["stop_reason"] is None
     assert state["technical_reason"] is None
-    assert state["stagnation_cycles"] == 0
-    assert state["consecutive_technical_failures"] == 0
     assert state["cycles_without_new_evidence"] == 0
     assert state["cycles_without_useful_sources"] == 0
-    assert state["progress_score"] == 0
-    assert state["useful_sources_count"] == 0
-    assert "telemetry" not in state
+    assert state["consecutive_technical_failures"] == 0
+    assert state["new_evidence_in_cycle"] == 0
+    assert state["useful_source_in_cycle"] is False

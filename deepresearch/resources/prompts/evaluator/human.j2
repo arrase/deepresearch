@@ -1,19 +1,36 @@
-Primary question: {{ query }}
+Research question:
+{{ query }}
 
-Coverage Snapshot:
+Coverage summary:
 {{ coverage_summary }}
 
-Source Balance Snapshot:
+Source balance:
 {{ source_balance_summary }}
 
-{{ dossier_context }}Active subqueries:
+Dossier summary:
+{{ dossier_context }}
+
+Open topics:
 {{ active_subqueries }}
-Resolved subqueries:
+
+Completed topics:
 {{ resolved_subqueries }}
-Open gaps:
+
+Current gaps:
 {{ open_gaps }}
 
-Evidence:
+Accepted evidence:
 {{ evidentiary }}
 
-Task: Evaluate coverage, contradictions, and sufficiency. First infer the answer shape demanded by the user question, then check whether the evidence actually covers the necessary facets for that shape. Use the coverage and source-balance snapshots to detect empty facets, thin subqueries, single-source concentration, or one-sided support. Generate detailed open gaps whenever deeper investigation is still needed.
+Task:
+Decide which topic ids are sufficiently covered, what contradictions exist, and what gaps remain.
+
+Rules:
+- Interpret `resolved_subquery_ids` as resolved topic ids kept under a compatibility field name.
+- Set `is_sufficient` to true only if the overall question can already be answered with reasonable confidence.
+- If any major facet is still missing, thin, poorly corroborated, or one-sided, keep `is_sufficient` false.
+- Only emit contradictions when two supported statements materially conflict.
+- Gap descriptions must be specific and actionable.
+- Suggested queries must be short search phrases.
+- Prefer 0 to 3 gaps. Add more only if clearly necessary.
+- Return JSON only.

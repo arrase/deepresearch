@@ -1,18 +1,28 @@
-# ORIGINAL RESEARCH QUESTION
+# Research Question
 {{ query }}
 
-# RESEARCH DOSSIER SUMMARY (USE FOR CONTEXT AND STRUCTURE)
+# Coverage Summary
+{{ coverage_summary }}
+
+# Source Balance
+{{ source_balance_summary }}
+
+# Open Gaps
+{{ open_gaps }}
+
+# Dossier
 {{ dossier_context }}
 
-# EVIDENTIARY CONTEXT (PRIMARY SOURCE FOR DATA AND DEPTH)
+# Evidence
 {{ evidentiary }}
 
-# YOUR TASK
-Produce a comprehensive, deeply analytical research report following the requested Markdown structure.
+# Task
+Write the final report now.
 
-### GUIDELINES:
-- **Avoid Surface-Level Rephrasing**: Do not simply repeat the summaries from the Research Dossier. Use the EVIDENTIARY CONTEXT to find specific data, quotes, and claims that add depth and nuance.
-- **Section Integrity**: Ensure that the "In-Depth Thematic Analysis" sections do not repeat the exact points from the "Executive Summary" or "Strategic Insights". Use the analysis sections to dive deeper into the "How" and "Why".
-- **Evidence Integration**: Every thematic section must rely on the provided evidence IDs for its claims.
-
-Begin synthesis now. You **MUST** write the entire report in {{ language }}.
+Rules:
+- Base the answer on the evidence lines first. Use the dossier mainly to organize the structure.
+- Do not claim certainty beyond the evidence.
+- If the evidence is incomplete, keep the answer bounded and explicit.
+- Do not fabricate inline citations, source lists, or missing details.
+- The runtime will append the final referenced-sources section separately.
+- Keep the report concise enough for a local model. Prefer roughly 600 to 1200 words unless the evidence is very thin.

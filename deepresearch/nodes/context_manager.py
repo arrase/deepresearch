@@ -1,12 +1,12 @@
-"""Context manager node implementation."""
+"""Curator node implementation."""
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 from langsmith import traceable
 
-from ..core.utils import deduplicate_evidence, summarize_evidence, update_working_dossier
+from ..core.utils import compute_topic_coverages, curate_evidence, summarize_evidence, update_working_dossier
 from ..state import DiscardedSource, ResearchState, SourceDiscardReason
 from .base import log_node_activity, log_runtime_event
 
@@ -19,59 +19,44 @@ class ContextManagerNode:
         self._runtime = runtime
 
     @traceable(name="context-manager-node")
-    @log_node_activity("context_manager", "Integrating evidence for: {query}")
+    @log_node_activity("context_manager", "Curating evidence for: {query}")
     def __call__(self, state: ResearchState) -> dict:
         browser_result = state.get("current_browser_result")
-        latest = state.get("latest_evidence", [])
-
-        accepted = deduplicate_evidence(state["atomic_evidence"], latest)
-        updated_evidence = [*state["atomic_evidence"], *accepted]
-
-        dossier = update_working_dossier(
-            state["working_dossier"],
-            evidence=accepted,
-            source_url=browser_result.url if browser_result else None,
-            source_title=browser_result.title if browser_result else None,
+        drafts = state["extracted_evidence_buffer"]
+        curated, accepted, merged_count, exact_added_tokens = curate_evidence(
+            state["curated_evidence"],
+            drafts,
+            iteration=state["current_iteration"],
+            dedup_config=self._runtime.config.dedup,
         )
+        dossier = update_working_dossier(state["working_dossier"], accepted)
+        coverage = compute_topic_coverages(state["plan"], curated, state["topic_attempts"])
 
         discarded = list(state["discarded_sources"])
-        if browser_result and not latest:
-            discarded.append(DiscardedSource(
-                url=browser_result.url,
-                reason=SourceDiscardReason.NO_EVIDENCE,
-                note="No evidence extracted from this source"
-            ))
+        if browser_result and browser_result.status.value in {"useful", "partial"} and not drafts:
+            discarded.append(
+                DiscardedSource(
+                    url=browser_result.url,
+                    reason=SourceDiscardReason.NO_EVIDENCE,
+                    note="No evidence extracted from this source",
+                )
+            )
 
-        updated_state = {
-            **state,
-            "atomic_evidence": updated_evidence,
-            "working_dossier": dossier,
-            "discarded_sources": discarded,
-        }
-        log_runtime_event(self._runtime, "[context_manager] Dossier updated", verbosity=1, count=len(accepted))
+        log_runtime_event(self._runtime, "[context_manager] Curated evidence", verbosity=1, accepted=len(accepted))
         log_runtime_event(
             self._runtime,
-            "[context_manager] Integrated accepted evidence into dossier",
+            "[context_manager] Evidence curation details",
             verbosity=3,
             accepted_evidence=summarize_evidence(accepted),
-            rejected_count=max(0, len(latest) - len(accepted)),
-            snapshot=self._runtime.context_manager.debug_state_snapshot(
-                cast(ResearchState, updated_state)
-            ),
+            merged_count=merged_count,
         )
         return {
-            "atomic_evidence": updated_evidence,
+            "curated_evidence": curated,
             "working_dossier": dossier,
+            "topic_coverage": coverage,
             "discarded_sources": discarded,
-            "latest_evidence": accepted,
-            "urls_visited_since_eval": state.get("urls_visited_since_eval", 0) + 1,
-            "progress_score": (
-                len(accepted) * self._runtime.config.runtime.weight_new_evidence
-                + (
-                    1
-                    if browser_result and browser_result.status.value in {"useful", "partial"}
-                    else 0
-                )
-                * self._runtime.config.runtime.weight_useful_source
-            ),
+            "accumulated_evidence_tokens_exact": state["accumulated_evidence_tokens_exact"] + exact_added_tokens,
+            "accumulated_evidence_tokens_prompt_fit": sum(item.prompt_fit_tokens_estimate for item in curated),
+            "new_evidence_in_cycle": len(accepted),
+            "merged_evidence_in_cycle": merged_count,
         }

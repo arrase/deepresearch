@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 from langsmith import traceable
 
 from ..core.utils import summarize_source_visit
-from ..state import BrowserPageStatus, DiscardedSource, ResearchState, SourceDiscardReason, SourceVisit
+from ..state import BrowserPageStatus, DiscardedSource, ResearchState, SourceDiscardReason, SourceRecord, SourceVisit
 from .base import log_node_activity, log_runtime_event
 
 if TYPE_CHECKING:
@@ -21,31 +21,31 @@ class BrowserNode:
     @traceable(name="browser-node")
     @log_node_activity("browser", "Navigating to: {query}")
     def __call__(self, state: ResearchState) -> dict:
-        candidate = state.get("current_candidate")
-        if candidate is None:
+        if not state["current_batch"]:
             result = SourceVisit(
                 url="",
                 status=BrowserPageStatus.TERMINAL_ERROR,
                 error="No actionable candidate is available",
             )
-            log_runtime_event(
-                self._runtime,
-                "[browser] Skipping navigation because there is no current candidate",
-                verbosity=1,
-            )
-            return {
-                "current_browser_result": result,
-            }
+            return {"current_browser_result": result, "useful_source_in_cycle": False}
 
+        candidate = state["current_batch"][0]
         result = self._runtime.browser.fetch(candidate.url)
-        visited = dict(state["visited_urls"])
-
-        # Preserve original candidate subqueries and ensure title
-        result.candidate_subquery_ids = candidate.subquery_ids
+        result.topic_ids = list(dict.fromkeys([*result.topic_ids, *candidate.topic_ids]))
         if not result.title:
             result.title = candidate.title or "Unknown Title"
 
-        visited[result.url] = result
+        visited = dict(state["visited_urls"])
+        visited[candidate.normalized_url or candidate.url] = SourceRecord(
+            url=candidate.normalized_url or candidate.url,
+            final_url=result.final_url or result.url,
+            title=result.title,
+            fetch_status=result.status,
+            extracted_chars=len(result.content),
+            relevant_chunks=[],
+            topic_ids=result.topic_ids,
+            last_error=result.error,
+        )
 
         discarded_sources = [*state["discarded_sources"]]
         if result.status not in {BrowserPageStatus.USEFUL, BrowserPageStatus.PARTIAL}:
@@ -80,10 +80,8 @@ class BrowserNode:
             "visited_urls": visited,
             "discarded_sources": discarded_sources,
             "current_browser_result": result,
-            "useful_sources_count": state["useful_sources_count"]
-            + (
-                1
-                if result.status in {BrowserPageStatus.USEFUL, BrowserPageStatus.PARTIAL}
-                else 0
-            ),
+            "useful_source_in_cycle": result.status in {BrowserPageStatus.USEFUL, BrowserPageStatus.PARTIAL},
+            "technical_reason": "browser_error"
+            if result.status in {BrowserPageStatus.RECOVERABLE_ERROR, BrowserPageStatus.TERMINAL_ERROR}
+            else None,
         }

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
 from langsmith import traceable
@@ -19,37 +18,62 @@ class SynthesizerNode:
     def __init__(self, runtime: ResearchRuntime) -> None:
         self._runtime = runtime
 
+    def _fallback_report(self, state: ResearchState) -> FinalReport:
+        gap_lines = [gap.description for gap in state["open_gaps"][:5]]
+        markdown = "\n\n".join(
+            [
+                "# Research Report",
+                "## Outcome",
+                "No curated evidence was accepted for the query.",
+                "## Limitations",
+                "- The system could not validate any source strongly enough to retain evidence.",
+                "- The report is partial and should be treated as an absence-of-evidence summary.",
+                "## Open Gaps",
+                *([f"- {gap}" for gap in gap_lines] or ["- No explicit gaps were recorded."]),
+            ]
+        )
+        return FinalReport(
+            query=state["query"],
+            executive_answer="No curated evidence was found.",
+            key_findings=["The system could not retain any evidence for the query."],
+            confidence=ConfidenceLevel.LOW,
+            reservations=["The result is based on failed or non-useful research cycles."],
+            open_gaps=gap_lines,
+            cited_sources=[],
+            evidence_ids=[],
+            markdown_report=markdown,
+        )
+
     @traceable(name="synthesizer-node")
     @log_node_activity("synthesizer", "Synthesizing report: {query}")
     def __call__(self, state: ResearchState) -> dict:
         context = self._runtime.context_manager.synthesizer_context(state)
-        synthesis_budget = state.get("synthesis_budget") or self._runtime.context_manager.synthesis_budget(state)
-        try:
-            report, usage = self._runtime.llm_workers.synthesize_report_with_usage(
-                context,
-                query=state["query"],
-            )
-        except (ValueError, KeyError, OSError):
-            usage = {}
-            report = FinalReport(
-                query=state["query"],
-                executive_answer="Synthesis failed.",
-                key_findings=["Error in synthesis."],
-                confidence=ConfidenceLevel.LOW,
-                evidence_ids=[e.id for e in state["atomic_evidence"]],
-                cited_sources=build_report_sources(state["atomic_evidence"]),
-            )
-        report.stop_reason = state.get("stop_reason") or (
-            "sufficient_information" if state.get("is_sufficient") else None
-        )
-        report.context_window_tokens = _budget_int(synthesis_budget, "context_window_tokens")
-        report.reserved_output_tokens = _budget_int(synthesis_budget, "reserved_output_tokens")
-        report.prompt_tokens = _budget_int(synthesis_budget, "base_prompt_tokens")
-        report.evidence_tokens = _budget_int(synthesis_budget, "selected_evidence_tokens")
-        report.available_prompt_tokens = _budget_int(synthesis_budget, "available_prompt_tokens")
+        synthesis_budget = state["synthesis_budget"] or self._runtime.context_manager.synthesis_budget(state)
+        if not state["curated_evidence"]:
+            usage: dict[str, int] = {}
+            report = self._fallback_report(state)
+        else:
+            try:
+                report, usage = self._runtime.llm_workers.synthesize_report_with_usage(context, query=state["query"])
+            except (ValueError, KeyError, OSError):
+                usage = {}
+                report = FinalReport(
+                    query=state["query"],
+                    executive_answer="Synthesis failed.",
+                    key_findings=["Error in synthesis."],
+                    confidence=ConfidenceLevel.LOW,
+                    evidence_ids=[item.evidence_id for item in state["curated_evidence"]],
+                    cited_sources=build_report_sources(state["curated_evidence"]),
+                    markdown_report="# Research Report\n\nSynthesis failed.",
+                )
+        report.stop_reason = state.get("stop_reason")
+        report.context_window_tokens = synthesis_budget.context_window_tokens
+        report.reserved_output_tokens = synthesis_budget.reserved_output_tokens
+        report.prompt_tokens = synthesis_budget.base_prompt_tokens
+        report.evidence_tokens = synthesis_budget.selected_evidence_tokens
+        report.available_prompt_tokens = synthesis_budget.available_prompt_tokens
         report.llm_usage = usage
         llm_usage = {**state.get("llm_usage", {}), "synthesizer": usage}
-
         log_runtime_event(
             self._runtime,
             "[synthesizer] Report generated",
@@ -58,27 +82,4 @@ class SynthesizerNode:
             stop_reason=report.stop_reason,
             **usage,
         )
-        log_runtime_event(
-            self._runtime,
-            "[synthesizer] Synthesis budget applied",
-            verbosity=3,
-            synthesis_budget={k: v for k, v in synthesis_budget.items() if isinstance(v, (int, bool, str))},
-            cited_sources=[source.model_dump(mode="json") for source in report.cited_sources[:5]],
-        )
-        return {
-            "final_report": report,
-            "llm_usage": llm_usage,
-        }
-
-
-def _budget_int(synthesis_budget: Mapping[str, object], key: str) -> int | None:
-    value = synthesis_budget.get(key)
-    if value is None:
-        return None
-    if isinstance(value, bool):
-        return int(value)
-    if isinstance(value, int):
-        return value
-    if isinstance(value, str):
-        return int(value)
-    raise TypeError(f"Expected integer-like synthesis budget value for {key!r}, got {type(value).__name__}")
+        return {"final_report": report, "llm_usage": llm_usage}

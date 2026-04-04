@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import cast
+
 import markdown
 from weasyprint import CSS, HTML
+
 
 def generate_pdf(markdown_text: str, output_path: Path | None = None) -> bytes:
     """
