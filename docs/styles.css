@@ -468,6 +468,88 @@ h2::after {
     gap: 24px;
 }
 
+.sample-output-section {
+    background:
+        linear-gradient(180deg, rgba(12, 16, 19, 0.35) 0%, rgba(12, 16, 19, 0.9) 100%),
+        radial-gradient(circle at top right, rgba(108, 92, 231, 0.18), transparent 32%),
+        radial-gradient(circle at 15% 30%, rgba(0, 206, 201, 0.12), transparent 28%),
+        #151a1f;
+}
+
+.sample-output-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.05fr) minmax(320px, 0.95fr);
+    gap: 24px;
+    align-items: stretch;
+}
+
+.sample-report-card,
+.sample-spec-card {
+    background: linear-gradient(180deg, rgba(37, 45, 52, 0.96), rgba(20, 24, 29, 0.98));
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 20px;
+    padding: 28px;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.28);
+}
+
+.sample-report-card {
+    display: grid;
+    gap: 18px;
+}
+
+.sample-report-card h3 {
+    font-size: 2rem;
+    color: #fff;
+}
+
+.sample-report-card p,
+.sample-spec-card p {
+    color: var(--muted-color);
+}
+
+.sample-report-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+}
+
+.sample-spec-card {
+    display: grid;
+    gap: 18px;
+}
+
+.sample-spec-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+}
+
+.sample-spec-item {
+    padding: 16px;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.sample-spec-label {
+    display: block;
+    margin-bottom: 8px;
+    color: var(--secondary-color);
+    font-size: 0.82rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+}
+
+.sample-spec-item strong {
+    color: #fff;
+    font-size: 1.08rem;
+}
+
+.sample-notes {
+    margin-top: 4px;
+}
+
 .command-group {
     border-left: 4px solid var(--primary-color);
 }
@@ -554,6 +636,10 @@ footer a:hover {
     .hero-grid {
         grid-template-columns: 1fr;
     }
+
+    .sample-output-grid {
+        grid-template-columns: 1fr;
+    }
 }
 
 @media (max-width: 1240px) {
@@ -592,7 +678,8 @@ footer a:hover {
     .feature-list,
     .process-grid,
     .split-grid,
-    .stat-strip {
+    .stat-strip,
+    .sample-spec-grid {
         grid-template-columns: 1fr;
     }
 
@@ -614,5 +701,9 @@ footer a:hover {
 
     .cmd-table td:first-child {
         padding-bottom: 0;
+    }
+
+    .sample-report-actions {
+        flex-direction: column;
     }
 }

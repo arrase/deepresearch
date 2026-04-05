@@ -14,6 +14,7 @@
             <nav>
                 <a href="#overview" class="logo">Deep<span>Research</span></a>
                 <ul class="nav-links">
+                    <li><a href="#sample-output">Sample Output</a></li>
                     <li><a href="#features">Features</a></li>
                     <li><a href="#pipeline">Pipeline</a></li>
                     <li><a href="#usage">Usage</a></li>
@@ -79,6 +80,61 @@ synthesizer    writes the final report</code></pre>
                         <li>Configuration is validated strictly instead of silently accepting unknown fields.</li>
                     </ul>
                 </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="sample-output" class="sample-output-section">
+        <div class="container">
+            <h2>Sample Output</h2>
+            <p class="section-intro">
+                This PDF report shows the kind of editorial output DeepResearch can generate from a single CLI run:
+                a structured comparison of Lightpanda versus Playwright with a final document ready to inspect or share.
+            </p>
+
+            <div class="sample-output-grid">
+                <article class="sample-report-card">
+                    <p class="command-title">Generated Report</p>
+                    <h3>Lightpanda vs Playwright</h3>
+                    <p>
+                        Open the bundled PDF example to see the final layout, writing style, and report structure produced by the application.
+                    </p>
+
+                    <div class="sample-report-actions">
+                        <a href="report.pdf" class="cta-button" target="_blank" rel="noreferrer">Open sample PDF</a>
+                        <a href="report.pdf" class="secondary-button" download>Download report.pdf</a>
+                    </div>
+
+                    <div class="feature-code">deepresearch "Lightpanda vs Playwright"  --pdf report.pdf</div>
+                </article>
+
+                <article class="sample-spec-card">
+                    <p class="command-title">Run Configuration</p>
+                    <div class="sample-spec-grid">
+                        <div class="sample-spec-item">
+                            <span class="sample-spec-label">Model</span>
+                            <strong>gemma4:e4b</strong>
+                        </div>
+                        <div class="sample-spec-item">
+                            <span class="sample-spec-label">GPU</span>
+                            <strong>RTX 5060 Ti</strong>
+                        </div>
+                        <div class="sample-spec-item">
+                            <span class="sample-spec-label">Context Window</span>
+                            <strong>128000 tokens</strong>
+                        </div>
+                        <div class="sample-spec-item">
+                            <span class="sample-spec-label">Output Mode</span>
+                            <strong>PDF export</strong>
+                        </div>
+                    </div>
+
+                    <ul class="data-list sample-notes">
+                        <li><strong>Question:</strong> The report investigates how Lightpanda compares to Playwright for browser automation and web interaction workflows.</li>
+                        <li><strong>Generated locally:</strong> The example reflects a local Ollama-backed run rather than a hosted black-box pipeline.</li>
+                        <li><strong>Auditability preserved:</strong> The final document remains aligned with DeepResearch's evidence-first reporting model.</li>
+                    </ul>
+                </article>
             </div>
         </div>
     </section>
