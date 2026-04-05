@@ -2,8 +2,6 @@
 
 DeepResearch is a local-first research CLI for complex, open-ended questions. It plans a research path, searches the web through Tavily, extracts evidence with a local Ollama model, evaluates whether coverage is good enough, and produces a final report with traceable citations.
 
-The project is intentionally simple: Tavily is the only search backend, and the pipeline extracts directly from Tavily raw content instead of maintaining a separate browser layer.
-
 ## Key Features
 
 - Autonomous research planning with subqueries and search intents.
