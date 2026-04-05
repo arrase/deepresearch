@@ -3,16 +3,22 @@
 from __future__ import annotations
 
 import argparse
-import json
 import logging
+import signal
+import sys
+import tomllib
+from contextlib import contextmanager
 from pathlib import Path
+from types import FrameType
 
-from .config import ResearchConfig
+from pydantic import ValidationError
+
+from .config import DEFAULT_CONFIG_FILENAME, ResearchConfig, resolve_config_root
 from .context_manager import ContextManager
 from .core.llm import LLMWorkers
 from .graph import build_graph
 from .observability import configure_logging, langsmith_tracing
-from .output_utils import generate_pdf
+from .output_utils import write_markdown_report, write_pdf_report
 from .runtime import ResearchRuntime
 from .state import build_initial_state
 from .tools import TavilySearchClient
@@ -68,63 +74,181 @@ def apply_cli_overrides(config: ResearchConfig, args: argparse.Namespace) -> Non
         config.runtime.verbosity = args.verbosity
 
 
+def _print_user_error(title: str, details: list[str]) -> None:
+    print(f"Error: {title}", file=sys.stderr)
+    for detail in details:
+        print(f"  - {detail}", file=sys.stderr)
+
+
+def _format_config_location(location: tuple[object, ...]) -> str:
+    if not location:
+        return "<root>"
+
+    parts: list[str] = []
+    for item in location:
+        if isinstance(item, int):
+            if parts:
+                parts[-1] = f"{parts[-1]}[{item}]"
+            else:
+                parts.append(f"[{item}]")
+            continue
+        parts.append(str(item))
+
+    head, *tail = parts
+    if not tail:
+        return f"[{head}]"
+    return f"[{head}].{'.'.join(tail)}"
+
+
+def _report_config_validation_error(config_file_path: Path, error: ValidationError) -> None:
+    detail_lines = [f"Configuration file: {config_file_path}"]
+    for issue in error.errors():
+        location = _format_config_location(tuple(issue.get("loc", ())))
+        message = issue.get("msg", "Invalid value")
+        if issue.get("type") == "extra_forbidden":
+            detail_lines.append(f"Unsupported setting {location}. Remove or rename it.")
+            continue
+        detail_lines.append(f"{location}: {message}.")
+
+    detail_lines.append(
+        "If this config comes from an older release, move config.toml to a backup location "
+        "and run the command again to regenerate a fresh commented config."
+    )
+    _print_user_error("Invalid configuration", detail_lines)
+
+
+def _report_config_load_error(config_file_path: Path, error: tomllib.TOMLDecodeError | OSError) -> None:
+    _print_user_error(
+        "Unable to load configuration",
+        [
+            f"Configuration file: {config_file_path}",
+            f"Reason: {error}",
+            "Fix the file and run the command again.",
+        ],
+    )
+
+
+def _report_runtime_config_error(config_file_path: Path, error: ValueError) -> None:
+    message = str(error)
+    if "Tavily search requires an api_key" in message:
+        _print_user_error(
+            "Search configuration is incomplete",
+            [
+                f"Configuration file: {config_file_path}",
+                "Missing setting: [search].api_key",
+                "Add your Tavily API key and run the command again.",
+            ],
+        )
+        return
+    raise error
+
+
+@contextmanager
+def _sigterm_as_keyboard_interrupt():
+    previous_handler = signal.getsignal(signal.SIGTERM)
+
+    def _raise_keyboard_interrupt(signum: int, frame: FrameType | None) -> None:
+        del signum, frame
+        raise KeyboardInterrupt()
+
+    signal.signal(signal.SIGTERM, _raise_keyboard_interrupt)
+    try:
+        yield
+    finally:
+        signal.signal(signal.SIGTERM, previous_handler)
+
+
 def cli() -> int:
     args = parse_args()
-    config = ResearchConfig.load(config_root=args.config_root)
-    apply_cli_overrides(config, args)
-    configure_logging(config.runtime.verbosity)
+    config_root = resolve_config_root(args.config_root)
+    config_file_path = config_root / DEFAULT_CONFIG_FILENAME
 
-    runtime = build_runtime(config)
-    if config.runtime.verbosity >= 1:
-        logger.info(
-            "Starting deep research with model=%s, num_ctx=%s, max_iterations=%s, verbosity=%s, config_root=%s",
-            config.model.model_name,
-            config.model.num_ctx,
-            config.runtime.max_iterations,
-            config.runtime.verbosity,
-            config.config_root,
+    try:
+        with _sigterm_as_keyboard_interrupt():
+            try:
+                config = ResearchConfig.load(config_root=config_root)
+            except ValidationError as error:
+                _report_config_validation_error(config_file_path, error)
+                return 2
+            except (tomllib.TOMLDecodeError, OSError) as error:
+                _report_config_load_error(config_file_path, error)
+                return 2
+
+            apply_cli_overrides(config, args)
+            configure_logging(config.runtime.verbosity)
+
+            try:
+                runtime = build_runtime(config)
+            except ValueError as error:
+                _report_runtime_config_error(config_file_path, error)
+                return 2
+
+            if config.runtime.verbosity >= 1:
+                logger.info(
+                    "Starting deep research with model=%s, num_ctx=%s, max_iterations=%s, verbosity=%s, config_root=%s",
+                    config.model.model_name,
+                    config.model.num_ctx,
+                    config.runtime.max_iterations,
+                    config.runtime.verbosity,
+                    config.config_root,
+                )
+
+            initial_state = build_initial_state(args.query, max_iterations=config.runtime.max_iterations)
+            graph = build_graph(runtime)
+            trace_metadata = {
+                "model_name": config.model.model_name,
+                "search_backend": "tavily",
+                "config_root": str(config.config_root),
+            }
+            with runtime, langsmith_tracing(config, metadata=trace_metadata):
+                final_state = graph.invoke(
+                    initial_state,
+                    config={"run_name": "deepresearch", "tags": ["cli"], "metadata": trace_metadata},
+                )
+
+            final_report = final_state.get("final_report")
+            if final_report is None:
+                _print_user_error(
+                    "The run finished without a final report",
+                    ["Re-run with --verbosity 1 or higher to inspect stage-level progress."],
+                )
+                return 2
+
+            try:
+                if args.markdown:
+                    write_markdown_report(final_report.markdown_report, Path(args.markdown))
+                elif args.pdf:
+                    write_pdf_report(final_report.markdown_report, Path(args.pdf))
+                elif not args.discord:
+                    write_markdown_report(final_report.markdown_report, Path("report.md"))
+            except OSError as error:
+                output_path = args.markdown or args.pdf or "report.md"
+                _print_user_error(
+                    "Unable to write report output",
+                    [
+                        f"Output path: {Path(output_path)}",
+                        f"Reason: {error}",
+                    ],
+                )
+                return 2
+
+            if args.discord:
+                import asyncio
+
+                from .outputs.discord import send_discord_report
+
+                success = asyncio.run(send_discord_report(config.discord, final_report))
+                if not success:
+                    logger.error("Failed to send report to Discord. Check your configuration.")
+
+            print(final_report.executive_answer)
+            return 0
+    except KeyboardInterrupt:
+        _print_user_error(
+            "Execution cancelled",
+            ["DeepResearch stopped cleanly after the interrupt.", "No partially written report was committed to disk."],
         )
-
-    initial_state = build_initial_state(args.query, max_iterations=config.runtime.max_iterations)
-    graph = build_graph(runtime)
-    trace_metadata = {
-        "model_name": config.model.model_name,
-        "search_backend": "tavily",
-        "config_root": str(config.config_root),
-    }
-    with langsmith_tracing(config, metadata=trace_metadata):
-        final_state = graph.invoke(
-            initial_state,
-            config={"run_name": "deepresearch", "tags": ["cli"], "metadata": trace_metadata},
-        )
-    final_report = final_state.get("final_report")
-    if final_report is None:
-        print(json.dumps({"error": "Failed to generate final report"}, indent=2, ensure_ascii=True))
-        return 2
-
-    if args.markdown:
-        output_path = Path(args.markdown)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_text(final_report.markdown_report, encoding="utf-8")
-    elif args.pdf:
-        output_path = Path(args.pdf)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        generate_pdf(final_report.markdown_report, output_path)
-    elif not args.discord:
-        output_path = Path("report.md")
-        output_path.write_text(final_report.markdown_report, encoding="utf-8")
-
-    if args.discord:
-        import asyncio
-
-        from .outputs.discord import send_discord_report
-
-        success = asyncio.run(send_discord_report(config.discord, final_report))
-        if not success:
-            logger.error("Failed to send report to Discord. Check your configuration.")
-
-    print(final_report.executive_answer)
-    return 0
+        return 130
 
 
 if __name__ == "__main__":

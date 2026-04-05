@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from types import TracebackType
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
@@ -44,3 +45,20 @@ class ResearchRuntime:
     context_manager: ContextManager
     llm_workers: LLMWorkersLike
     search_client: SearchClientLike
+
+    def close(self) -> None:
+        for resource in (self.search_client, self.llm_workers):
+            close_method = getattr(resource, "close", None)
+            if callable(close_method):
+                close_method()
+
+    def __enter__(self) -> ResearchRuntime:
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        self.close()

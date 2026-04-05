@@ -21,6 +21,15 @@ def test_load_bootstraps_project_style_config_root(tmp_path) -> None:
     assert (config.prompts_dir / "planner" / "system.j2").exists()
 
 
+def test_bootstrap_config_file_contains_inline_help_comments(tmp_path) -> None:
+    config_root = tmp_path / "project-config"
+    config = ResearchConfig.load(config_root=config_root)
+    config_text = config.config_file_path.read_text(encoding="utf-8")
+
+    assert 'api_key = "" # Tavily API key used for web search requests.' in config_text
+    assert 'max_iterations = 8 # Hard cap on planner and search cycles for a run.' in config_text
+
+
 def test_prompt_loader_renders_user_editable_template(tmp_path) -> None:
     prompts_dir = tmp_path / "prompts"
     planner_dir = prompts_dir / "planner"

@@ -12,21 +12,30 @@ from deepresearch.observability import langsmith_tracing
 def test_langsmith_settings_load_from_config(tmp_path) -> None:
     config_root = tmp_path / "config-root"
     config = ResearchConfig.load(config_root=config_root)
+    updated_text = config.config_file_path.read_text(encoding="utf-8")
+    updated_text = updated_text.replace(
+        "enabled = false # Enable LangSmith integration for this run.",
+        "enabled = true # Enable LangSmith integration for this run.",
+        1,
+    )
+    updated_text = updated_text.replace(
+        'endpoint = "" # Custom LangSmith API endpoint, if you are not using the default service.',
+        'endpoint = "https://eu.api.smith.langchain.com" '
+        '# Custom LangSmith API endpoint, if you are not using the default service.',
+        1,
+    )
+    updated_text = updated_text.replace(
+        'api_key = "" # LangSmith API key required when tracing is enabled.',
+        'api_key = "test-key" # LangSmith API key required when tracing is enabled.',
+        1,
+    )
+    updated_text = updated_text.replace(
+        'project = "DeepResearch" # LangSmith project name used for uploaded traces.',
+        'project = "Deepresearch" # LangSmith project name used for uploaded traces.',
+        1,
+    )
     config.config_file_path.write_text(
-        config.config_file_path.read_text(encoding="utf-8").replace(
-            "[langsmith]\n"
-            'enabled = false\n'
-            "tracing = true\n"
-            'endpoint = ""\n'
-            'api_key = ""\n'
-            'project = "DeepResearch"\n',
-            "[langsmith]\n"
-            "enabled = true\n"
-            "tracing = true\n"
-            'endpoint = "https://eu.api.smith.langchain.com"\n'
-            'api_key = "test-key"\n'
-            'project = "Deepresearch"\n',
-        ),
+        updated_text,
         encoding="utf-8",
     )
 

@@ -83,15 +83,41 @@ class ModelConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    model_name: str = Field(default="qwen3.5:9b")
-    base_url: str = Field(default="http://127.0.0.1:11434")
-    temperature_planner: float = Field(default=0.2, ge=0.0, le=1.0)
-    temperature_extractor: float = Field(default=0.0, ge=0.0, le=1.0)
-    temperature_evaluator: float = Field(default=0.0, ge=0.0, le=1.0)
-    temperature_synthesizer: float = Field(default=0.1, ge=0.0, le=1.0)
-    num_ctx: int = Field(default=100000, ge=4096)
-    num_predict: int = Field(default=8192, ge=64)
-    timeout_seconds: int = Field(default=120, ge=5)
+    model_name: str = Field(
+        default="qwen3.5:9b",
+        description="Ollama model name used for all research stages.",
+    )
+    base_url: str = Field(
+        default="http://127.0.0.1:11434",
+        description="Base URL of the local or remote Ollama server.",
+    )
+    temperature_planner: float = Field(
+        default=0.2,
+        ge=0.0,
+        le=1.0,
+        description="Sampling temperature for the planning stage.",
+    )
+    temperature_extractor: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1.0,
+        description="Sampling temperature for evidence extraction.",
+    )
+    temperature_evaluator: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1.0,
+        description="Sampling temperature for coverage evaluation.",
+    )
+    temperature_synthesizer: float = Field(
+        default=0.1,
+        ge=0.0,
+        le=1.0,
+        description="Sampling temperature for final report synthesis.",
+    )
+    num_ctx: int = Field(default=100000, ge=4096, description="Maximum context window passed to Ollama.")
+    num_predict: int = Field(default=8192, ge=64, description="Maximum number of tokens generated per LLM call.")
+    timeout_seconds: int = Field(default=120, ge=5, description="Per-request timeout for Ollama calls.")
 
 
 class SearchConfig(BaseModel):
@@ -99,10 +125,23 @@ class SearchConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    api_key: str | None = Field(default=None)
-    results_per_query: int = Field(default=5, ge=1, le=20)
-    max_raw_content_chars: int = Field(default=24000, ge=1000)
-    min_source_chars: int = Field(default=300, ge=50)
+    api_key: str | None = Field(default=None, description="Tavily API key used for web search requests.")
+    results_per_query: int = Field(
+        default=5,
+        ge=1,
+        le=20,
+        description="Maximum Tavily results requested for each search query.",
+    )
+    max_raw_content_chars: int = Field(
+        default=24000,
+        ge=1000,
+        description="Maximum raw page characters kept from each search result.",
+    )
+    min_source_chars: int = Field(
+        default=300,
+        ge=50,
+        description="Minimum source content length required before extraction.",
+    )
 
 
 class ReporterConfig(BaseModel):
@@ -110,8 +149,17 @@ class ReporterConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    output_reserve_ratio: float = Field(default=0.20, ge=0.05, lt=0.8)
-    prompt_margin_tokens: int = Field(default=512, ge=0)
+    output_reserve_ratio: float = Field(
+        default=0.20,
+        ge=0.05,
+        lt=0.8,
+        description="Fraction of the context window reserved for the final answer.",
+    )
+    prompt_margin_tokens: int = Field(
+        default=512,
+        ge=0,
+        description="Extra prompt headroom kept free before synthesis.",
+    )
 
 
 class DedupConfig(BaseModel):
@@ -119,10 +167,28 @@ class DedupConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    lexical_fingerprint: bool = Field(default=True)
-    approximate_jaccard_threshold: float = Field(default=0.85, ge=0.5, le=1.0)
-    min_length_ratio: float = Field(default=0.8, ge=0.1, le=1.0)
-    max_length_ratio: float = Field(default=1.25, ge=1.0, le=5.0)
+    lexical_fingerprint: bool = Field(
+        default=True,
+        description="Enable lexical fingerprint checks before keeping near-duplicate evidence.",
+    )
+    approximate_jaccard_threshold: float = Field(
+        default=0.85,
+        ge=0.5,
+        le=1.0,
+        description="Similarity threshold used to reject near-duplicate evidence.",
+    )
+    min_length_ratio: float = Field(
+        default=0.8,
+        ge=0.1,
+        le=1.0,
+        description="Lower length ratio bound when comparing duplicate candidates.",
+    )
+    max_length_ratio: float = Field(
+        default=1.25,
+        ge=1.0,
+        le=5.0,
+        description="Upper length ratio bound when comparing duplicate candidates.",
+    )
 
 
 class DiscordConfig(BaseModel):
@@ -130,9 +196,13 @@ class DiscordConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    token: str | None = Field(default=None)
-    user_id: str | None = Field(default=None)
-    output: str = Field(default="pdf", pattern="^(markdown|pdf)$")
+    token: str | None = Field(default=None, description="Discord bot token used to send direct messages.")
+    user_id: str | None = Field(default=None, description="Discord user ID that receives the report.")
+    output: str = Field(
+        default="pdf",
+        pattern="^(markdown|pdf)$",
+        description="Attachment format used when the report is too long for a message.",
+    )
 
 
 class RuntimeConfig(BaseModel):
@@ -140,17 +210,50 @@ class RuntimeConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    max_iterations: int = Field(default=8, ge=1)
-    search_batch_size: int = Field(default=3, ge=1, le=10)
-    min_attempts_before_exhaustion: int = Field(default=3, ge=1)
-    max_cycles_without_new_evidence: int = Field(default=4, ge=1)
-    max_cycles_without_useful_sources: int = Field(default=4, ge=1)
-    max_consecutive_technical_failures: int = Field(default=3, ge=1)
-    semantic_eval_interval: int = Field(default=0, ge=0)
-    allow_dynamic_replan: bool = Field(default=True)
-    verbosity: int = Field(default=0, ge=0, le=3)
-    llm_retry_attempts: int = Field(default=2, ge=0, le=5)
-    language: str = Field(default="English")
+    max_iterations: int = Field(default=8, ge=1, description="Hard cap on planner and search cycles for a run.")
+    search_batch_size: int = Field(
+        default=3,
+        ge=1,
+        le=10,
+        description="How many candidate search queries to execute per cycle.",
+    )
+    min_attempts_before_exhaustion: int = Field(
+        default=3,
+        ge=1,
+        description="Minimum attempts before the runtime can mark a topic as exhausted.",
+    )
+    max_cycles_without_new_evidence: int = Field(
+        default=4,
+        ge=1,
+        description="Stop after this many cycles without newly accepted evidence.",
+    )
+    max_cycles_without_useful_sources: int = Field(
+        default=4,
+        ge=1,
+        description="Stop after this many cycles without useful sources.",
+    )
+    max_consecutive_technical_failures: int = Field(
+        default=3,
+        ge=1,
+        description="Abort when too many consecutive technical failures happen.",
+    )
+    semantic_eval_interval: int = Field(
+        default=0,
+        ge=0,
+        description="Run evaluator every N cycles even without strong evidence updates; 0 disables it.",
+    )
+    allow_dynamic_replan: bool = Field(
+        default=True,
+        description="Allow the planner to revise the topic plan during the run.",
+    )
+    verbosity: int = Field(default=0, ge=0, le=3, description="CLI log verbosity from quiet to detailed diagnostics.")
+    llm_retry_attempts: int = Field(
+        default=2,
+        ge=0,
+        le=5,
+        description="How many times to retry recoverable LLM parsing failures.",
+    )
+    language: str = Field(default="English", description="Language used for prompts and the final report.")
 
 
 class LangSmithConfig(BaseModel):
@@ -158,11 +261,14 @@ class LangSmithConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    enabled: bool = Field(default=False)
-    tracing: bool = Field(default=True)
-    endpoint: str | None = Field(default=None)
-    api_key: str | None = Field(default=None)
-    project: str = Field(default="DeepResearch")
+    enabled: bool = Field(default=False, description="Enable LangSmith integration for this run.")
+    tracing: bool = Field(default=True, description="Emit tracing spans when LangSmith integration is enabled.")
+    endpoint: str | None = Field(
+        default=None,
+        description="Custom LangSmith API endpoint, if you are not using the default service.",
+    )
+    api_key: str | None = Field(default=None, description="LangSmith API key required when tracing is enabled.")
+    project: str = Field(default="DeepResearch", description="LangSmith project name used for uploaded traces.")
 
     @model_validator(mode="after")
     def validate_enabled_credentials(self) -> LangSmithConfig:
@@ -176,13 +282,34 @@ class ResearchConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    model: ModelConfig = Field(default_factory=ModelConfig)
-    search: SearchConfig = Field(default_factory=SearchConfig)
-    reporter: ReporterConfig = Field(default_factory=ReporterConfig)
-    dedup: DedupConfig = Field(default_factory=DedupConfig)
-    discord: DiscordConfig = Field(default_factory=DiscordConfig)
-    runtime: RuntimeConfig = Field(default_factory=RuntimeConfig)
-    langsmith: LangSmithConfig = Field(default_factory=LangSmithConfig)
+    model: ModelConfig = Field(
+        default_factory=ModelConfig,
+        description="LLM settings shared by the research pipeline.",
+    )
+    search: SearchConfig = Field(
+        default_factory=SearchConfig,
+        description="Search backend credentials and retrieval limits.",
+    )
+    reporter: ReporterConfig = Field(
+        default_factory=ReporterConfig,
+        description="Budget settings for the final synthesis prompt.",
+    )
+    dedup: DedupConfig = Field(
+        default_factory=DedupConfig,
+        description="Deduplication rules for evidence selection.",
+    )
+    discord: DiscordConfig = Field(
+        default_factory=DiscordConfig,
+        description="Optional Discord delivery settings.",
+    )
+    runtime: RuntimeConfig = Field(
+        default_factory=RuntimeConfig,
+        description="Execution limits, retry policy, and logging verbosity.",
+    )
+    langsmith: LangSmithConfig = Field(
+        default_factory=LangSmithConfig,
+        description="Optional tracing integration settings.",
+    )
 
     _config_root: Path = PrivateAttr(default_factory=default_config_root)
     _config_file_path: Path = PrivateAttr(default_factory=lambda: default_config_root() / DEFAULT_CONFIG_FILENAME)

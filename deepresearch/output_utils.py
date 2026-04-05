@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import tempfile
 from pathlib import Path
 from typing import cast
 
@@ -113,3 +115,30 @@ def generate_pdf(markdown_text: str, output_path: Path | None = None) -> bytes:
 
     pdf_bytes = HTML(string=full_html).write_pdf(output_path, stylesheets=[CSS(string=css)])
     return cast(bytes, pdf_bytes)
+
+
+def _atomic_write_bytes(content: bytes, output_path: Path) -> None:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    file_descriptor, temp_name = tempfile.mkstemp(
+        dir=output_path.parent,
+        prefix=f".{output_path.name}.",
+        suffix=".tmp",
+    )
+    temp_path = Path(temp_name)
+    try:
+        with os.fdopen(file_descriptor, "wb") as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp_path, output_path)
+    finally:
+        if temp_path.exists():
+            temp_path.unlink()
+
+
+def write_markdown_report(markdown_text: str, output_path: Path) -> None:
+    _atomic_write_bytes(markdown_text.encode("utf-8"), output_path)
+
+
+def write_pdf_report(markdown_text: str, output_path: Path) -> None:
+    _atomic_write_bytes(generate_pdf(markdown_text), output_path)

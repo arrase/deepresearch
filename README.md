@@ -139,49 +139,56 @@ The main user-editable file is ~/.deepresearch/config/config.toml. The runtime v
 
 ```toml
 [model]
-model_name = "qwen3.5:9b"
-base_url = "OLLAMA_BASE_URL"
-num_ctx = 100000
-num_predict = 8192
-timeout_seconds = 120
+model_name = "qwen3.5:9b" # Ollama model name used for all research stages.
+base_url = "http://127.0.0.1:11434" # Base URL of the local or remote Ollama server.
+num_ctx = 100000 # Maximum context window passed to Ollama.
+num_predict = 8192 # Maximum tokens generated per LLM call.
+timeout_seconds = 120 # Per-request timeout for Ollama calls.
 ```
 
 ### Search settings
 
 ```toml
 [search]
-api_key = ""
-results_per_query = 5
-max_raw_content_chars = 24000
-min_source_chars = 300
+api_key = "" # Tavily API key used for web search requests.
+results_per_query = 5 # Maximum Tavily results requested for each search query.
+max_raw_content_chars = 24000 # Maximum raw page characters kept from each search result.
+min_source_chars = 300 # Minimum source content length required before extraction.
 ```
 
 ### Runtime settings
 
 ```toml
 [runtime]
-max_iterations = 8
-search_batch_size = 3
-min_attempts_before_exhaustion = 3
-max_cycles_without_new_evidence = 4
-max_cycles_without_useful_sources = 4
-max_consecutive_technical_failures = 3
-semantic_eval_interval = 0
-allow_dynamic_replan = true
-verbosity = 0
-language = "English"
+max_iterations = 8 # Hard cap on planner and search cycles for a run.
+search_batch_size = 3 # How many candidate search queries to execute per cycle.
+min_attempts_before_exhaustion = 3 # Minimum attempts before a topic can be marked as exhausted.
+max_cycles_without_new_evidence = 4 # Stop after this many cycles without newly accepted evidence.
+max_cycles_without_useful_sources = 4 # Stop after this many cycles without useful sources.
+max_consecutive_technical_failures = 3 # Abort after too many consecutive technical failures.
+semantic_eval_interval = 0 # Run evaluator every N cycles even without strong evidence updates; 0 disables it.
+allow_dynamic_replan = true # Allow the planner to revise the topic plan during the run.
+verbosity = 0 # CLI log verbosity from quiet to detailed diagnostics.
+llm_retry_attempts = 2 # How many times to retry recoverable LLM parsing failures.
+language = "English" # Language used for the final report.
 ```
 
 ### LangSmith settings
 
 ```toml
 [langsmith]
-enabled = false
-tracing = true
-endpoint = ""
-api_key = ""
-project = "DeepResearch"
+enabled = false # Enable LangSmith integration for this run.
+tracing = true # Emit tracing spans when LangSmith integration is enabled.
+endpoint = "" # Custom LangSmith API endpoint, if you are not using the default service.
+api_key = "" # LangSmith API key required when tracing is enabled.
+project = "DeepResearch" # LangSmith project name used for uploaded traces.
 ```
+
+### Troubleshooting invalid config
+
+- The CLI prints the exact file path and setting when validation fails.
+- Unknown sections or keys are rejected on purpose; remove or rename the unsupported setting.
+- If your config came from an older release and has drifted too far, move ~/.deepresearch/config/config.toml to a backup location and run the command again to regenerate a fresh commented config.
 
 ## Runtime Tuning And Stop Conditions
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from types import TracebackType
+
 import httpx
 
 from ..config import SearchConfig
@@ -56,3 +58,17 @@ class TavilySearchClient:
                 )
             )
         return candidates
+
+    def close(self) -> None:
+        self._client.close()
+
+    def __enter__(self) -> TavilySearchClient:
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        self.close()
