@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from ..runtime import ResearchRuntime
-from .browser import BrowserNode
 from .context_manager import ContextManagerNode
 from .evaluator import EvaluatorNode
 from .extractor import ExtractorNode
@@ -12,7 +11,6 @@ from .source_manager import SourceManagerNode
 from .synthesizer import SynthesizerNode
 
 __all__ = [
-    "BrowserNode",
     "ContextManagerNode",
     "EvaluatorNode",
     "ExtractorNode",
@@ -29,7 +27,6 @@ class ResearchNodes:
     def __init__(self, runtime: ResearchRuntime) -> None:
         self.planner = PlannerNode(runtime)
         self.source_manager = SourceManagerNode(runtime)
-        self.browser = BrowserNode(runtime)
         self.extractor = ExtractorNode(runtime)
         self.context_manager = ContextManagerNode(runtime)
         self.evaluator = EvaluatorNode(runtime)

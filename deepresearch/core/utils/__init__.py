@@ -5,7 +5,6 @@ from .coverage import (
     summarize_evidence,
     summarize_gaps,
     summarize_search_candidates,
-    summarize_source_visit,
     summarize_subqueries,
 )
 from .evidence import (
@@ -24,7 +23,7 @@ from .evidence import (
 from .ranking import (
     build_search_query,
     choose_active_topic,
-    classify_browser_payload,
+    classify_source_content,
     deduplicate_candidates,
     enrich_gaps_with_search_terms,
     prune_queue_by_domain,
@@ -35,11 +34,11 @@ from .ranking import (
 )
 from .text import (
     estimate_tokens,
-    is_browser_noise_line,
+    is_source_noise_line,
     sanitize_source_title,
     select_relevant_chunks,
     short_excerpt,
-    split_browser_payload,
+    split_source_content,
     split_text,
 )
 from .url import TRACKING_QUERY_KEYS, canonicalize_url, extract_domain
@@ -51,7 +50,7 @@ __all__ = [
     "canonical_fingerprint",
     "choose_active_topic",
     "claims_are_approximate_duplicates",
-    "classify_browser_payload",
+    "classify_source_content",
     "compute_minimum_coverage",
     "compute_topic_coverages",
     "curate_evidence",
@@ -59,7 +58,7 @@ __all__ = [
     "enrich_gaps_with_search_terms",
     "estimate_tokens",
     "extract_domain",
-    "is_browser_noise_line",
+    "is_source_noise_line",
     "numeric_tokens",
     "prune_queue_by_domain",
     "rank_topics_for_source",
@@ -70,13 +69,12 @@ __all__ = [
     "select_evidence_for_context",
     "select_relevant_chunks",
     "short_excerpt",
-    "split_browser_payload",
+    "split_source_content",
     "significant_tokens",
     "split_text",
     "summarize_evidence",
     "summarize_gaps",
     "summarize_search_candidates",
-    "summarize_source_visit",
     "summarize_subqueries",
     "total_evidence_tokens",
     "update_working_dossier",

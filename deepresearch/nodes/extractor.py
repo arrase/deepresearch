@@ -1,8 +1,8 @@
 """Extractor node implementation.
 
-Iterates over every useful entry in ``browser_results`` and makes one
-LLM extraction call per source.  Drafts from all sources are collected
-into a single ``extracted_evidence_buffer``.
+Iterates over every source in ``current_batch`` and makes one LLM extraction
+call per source. Drafts from all sources are collected into a single
+``extracted_evidence_buffer``.
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 from langsmith import traceable
 
 from ..core.utils import sanitize_source_title, select_relevant_chunks, split_text
-from ..state import BrowserPageStatus, EvidenceDraft, ResearchState
+from ..state import EvidenceDraft, ResearchState
 from .base import log_node_activity, log_runtime_event
 
 if TYPE_CHECKING:
@@ -29,7 +29,7 @@ class ExtractorNode:
     @traceable(name="extractor-node")
     @log_node_activity("extractor", "Extracting from: {query}")
     def __call__(self, state: ResearchState) -> dict:
-        browser_results = state.get("browser_results") or []
+        candidates = state["current_batch"]
         active_topic_id = state.get("active_topic_id")
         topic = next((item for item in state["plan"] if item.id == active_topic_id), None)
         if topic is None:
@@ -38,13 +38,13 @@ class ExtractorNode:
         all_drafts: list[EvidenceDraft] = []
         total_usage: dict[str, int] = {}
 
-        for browser_result in browser_results:
-            if browser_result.status not in {BrowserPageStatus.USEFUL, BrowserPageStatus.PARTIAL}:
+        for candidate in candidates:
+            if not candidate.raw_content.strip():
                 continue
 
             terms = topic.search_terms or [topic.question]
-            chunks = select_relevant_chunks(split_text(browser_result.content), terms, 8)
-            max_chars = min(self._runtime.config.browser.max_content_chars, _MAX_EXTRACTION_CONTENT)
+            chunks = select_relevant_chunks(split_text(candidate.raw_content), terms, 8)
+            max_chars = min(self._runtime.config.search.max_raw_content_chars, _MAX_EXTRACTION_CONTENT)
             local_source = "\n\n".join(chunks)[:max_chars]
             context = self._runtime.context_manager.extractor_context(state, topic, local_source)
             payload, usage = self._runtime.llm_workers.extract_evidence_with_usage(context)
@@ -55,10 +55,10 @@ class ExtractorNode:
             drafts = [
                 EvidenceDraft(
                     topic_id=topic.id,
-                    source_url=browser_result.final_url or browser_result.url,
+                    source_url=candidate.normalized_url or candidate.url,
                     source_title=sanitize_source_title(
-                        browser_result.title,
-                        browser_result.final_url or browser_result.url,
+                        candidate.title,
+                        candidate.normalized_url or candidate.url,
                     )
                     or "Unknown Source",
                     claim=item.claim,
@@ -78,7 +78,7 @@ class ExtractorNode:
                 self._runtime,
                 "[extractor] Extraction complete",
                 verbosity=1,
-                url=browser_result.url,
+                url=candidate.url,
                 count=len(drafts),
                 **usage,
             )
@@ -89,9 +89,7 @@ class ExtractorNode:
             "[extractor] Batch extraction finished",
             verbosity=2,
             total_drafts=len(all_drafts),
-            sources_processed=sum(
-                1 for r in browser_results if r.status in {BrowserPageStatus.USEFUL, BrowserPageStatus.PARTIAL}
-            ),
+            sources_processed=sum(1 for candidate in candidates if candidate.raw_content.strip()),
         )
         return {
             "extracted_evidence_buffer": all_drafts,

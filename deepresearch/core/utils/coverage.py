@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from ...state import CuratedEvidence, FinalReport, Gap, ResearchTopic, SearchCandidate, SourceVisit
+from ...state import CuratedEvidence, FinalReport, Gap, ResearchTopic, SearchCandidate
 from .text import short_excerpt
 
 
@@ -68,20 +68,3 @@ def summarize_search_candidates(candidates: Iterable[SearchCandidate], limit: in
         }
         for item in list(candidates)[:limit]
     ]
-
-
-def summarize_source_visit(source: SourceVisit, *, include_content_preview: bool = False) -> dict[str, object]:
-    payload: dict[str, object] = {
-        "url": source.url,
-        "final_url": source.final_url,
-        "title": source.title,
-        "status": source.status.value,
-        "excerpt": short_excerpt(source.excerpt, 200),
-        "content_chars": len(source.content),
-        "topic_ids": source.topic_ids[:6],
-        "diagnostics": source.diagnostics,
-        "error": source.error,
-    }
-    if include_content_preview:
-        payload["content_preview"] = short_excerpt(source.content, 400)
-    return payload

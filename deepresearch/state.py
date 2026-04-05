@@ -28,15 +28,6 @@ def coerce_int(value: Any, default: int = 1) -> int:
     return int(match.group(0)) if match else default
 
 
-class BrowserPageStatus(StrEnum):
-    USEFUL = "useful"
-    PARTIAL = "partial"
-    BLOCKED = "blocked"
-    EMPTY = "empty"
-    RECOVERABLE_ERROR = "recoverable_error"
-    TERMINAL_ERROR = "terminal_error"
-
-
 class TopicStatus(StrEnum):
     PENDING = "pending"
     IN_PROGRESS = "in_progress"
@@ -135,24 +126,10 @@ class DiscardedSource(BaseModel):
     timestamp: str = Field(default_factory=utc_now_iso)
 
 
-class SourceVisit(BaseModel):
-    url: str
-    final_url: str | None = None
-    title: str = ""
-    status: BrowserPageStatus
-    content: str = ""
-    excerpt: str = ""
-    error: str | None = None
-    topic_ids: list[str] = Field(default_factory=list)
-    diagnostics: dict[str, Any] = Field(default_factory=dict)
-    fetched_at: str = Field(default_factory=utc_now_iso)
-
-
 class SourceRecord(BaseModel):
     url: str
     final_url: str | None = None
     title: str = ""
-    fetch_status: BrowserPageStatus
     extracted_chars: int = 0
     relevant_chunks: list[str] = Field(default_factory=list)
     topic_ids: list[str] = Field(default_factory=list)
@@ -326,7 +303,6 @@ class ResearchState(TypedDict):
     working_dossier: WorkingDossier
     llm_usage: dict[str, dict[str, int]]
     final_report: FinalReport | None
-    browser_results: list[SourceVisit]
 
 
 def build_initial_state(query: str, *, max_iterations: int) -> ResearchState:
@@ -368,5 +344,4 @@ def build_initial_state(query: str, *, max_iterations: int) -> ResearchState:
         "working_dossier": WorkingDossier(),
         "llm_usage": {},
         "final_report": None,
-        "browser_results": [],
     }

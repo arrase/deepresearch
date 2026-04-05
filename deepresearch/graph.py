@@ -8,7 +8,7 @@ from langgraph.graph import END, START, StateGraph
 
 from .nodes import ResearchNodes
 from .runtime import ResearchRuntime
-from .state import BrowserPageStatus, ResearchState
+from .state import ResearchState
 
 
 class CompiledResearchGraph(Protocol):
@@ -20,7 +20,6 @@ def build_graph(runtime: ResearchRuntime) -> CompiledResearchGraph:
     graph = StateGraph(ResearchState)
     graph.add_node("planner", nodes.planner)
     graph.add_node("source_manager", nodes.source_manager)
-    graph.add_node("browser", nodes.browser)
     graph.add_node("extractor", nodes.extractor)
     graph.add_node("context_manager", nodes.context_manager)
     graph.add_node("evaluator", nodes.evaluator)
@@ -31,11 +30,6 @@ def build_graph(runtime: ResearchRuntime) -> CompiledResearchGraph:
     graph.add_conditional_edges(
         "source_manager",
         _route_after_source_manager,
-        {"browser": "browser", "evaluator": "evaluator"},
-    )
-    graph.add_conditional_edges(
-        "browser",
-        _route_after_browser,
         {"extractor": "extractor", "evaluator": "evaluator"},
     )
     graph.add_edge("extractor", "context_manager")
@@ -50,12 +44,7 @@ def build_graph(runtime: ResearchRuntime) -> CompiledResearchGraph:
 
 
 def _route_after_source_manager(state: ResearchState) -> str:
-    return "browser" if state["current_batch"] else "evaluator"
-
-
-def _route_after_browser(state: ResearchState) -> str:
-    results = state.get("browser_results") or []
-    if any(r.status in {BrowserPageStatus.USEFUL, BrowserPageStatus.PARTIAL} for r in results):
+    if state["current_batch"]:
         return "extractor"
     return "evaluator"
 

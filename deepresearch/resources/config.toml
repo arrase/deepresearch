@@ -9,24 +9,11 @@ num_ctx = 100000
 num_predict = 8192
 timeout_seconds = 120
 
-[browser]
-image = "lightpanda/browser:nightly"
-disable_telemetry = true
-wait_ms = 7000
-wait_until = "networkidle"
-obey_robots = true
-max_content_chars = 24000
-min_useful_chars = 300
-min_partial_chars = 120
-request_timeout_seconds = 90
-
 [search]
-backend = "tavily"
 api_key = ""
 results_per_query = 5
 max_raw_content_chars = 24000
-fallback_backend = "duckduckgo"
-user_agent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+min_source_chars = 300
 
 [reporter]
 output_reserve_ratio = 0.20

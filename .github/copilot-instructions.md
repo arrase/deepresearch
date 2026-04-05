@@ -3,8 +3,8 @@
 ## Architecture
 
 - DeepResearch is a LangGraph pipeline. The runtime is assembled in `deepresearch/main.py` via `build_runtime`, and the graph is defined in `deepresearch/graph.py`.
-- Keep node responsibilities separated: planner, source discovery, browser, extractor, context manager, evaluator, and synthesizer live under `deepresearch/nodes/` and should continue to communicate through `ResearchState` updates rather than direct cross-node calls.
-- Nodes should consume dependencies from `ResearchRuntime`; do not instantiate config, browser, search, or LLM clients inside node logic.
+- Keep node responsibilities separated: planner, source discovery, extractor, context manager, evaluator, and synthesizer live under `deepresearch/nodes/` and should continue to communicate through `ResearchState` updates rather than direct cross-node calls.
+- Nodes should consume dependencies from `ResearchRuntime`; do not instantiate config, search, or LLM clients inside node logic.
 - Prompt changes belong in `deepresearch/resources/prompts/`; update Python logic only when the contract or rendering flow changes.
 - Configuration is defined by strict Pydantic models in `deepresearch/config.py`. When adding config, update both the schema and `deepresearch/resources/config.toml`.
 
@@ -31,6 +31,6 @@
 ## Working Notes for Agents
 
 - Read `README.md` for installation, CLI flags, output modes, and environment prerequisites instead of duplicating that content here.
-- Be careful when editing DuckDuckGo or Lightpanda integrations: search redirects, browser bootstrapping, and other external-service edge cases already have project-specific handling.
+- Tavily is the only supported search backend; keep the integration simple and avoid reintroducing compatibility layers for removed backends.
 - The editable user config is bootstrapped under `~/.deepresearch/config/`. Preserve that workflow when changing configuration loading.
 - This repo uses strict config validation and typed payload contracts. Favor root-cause fixes over permissive fallbacks that hide malformed inputs.

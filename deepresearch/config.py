@@ -94,38 +94,15 @@ class ModelConfig(BaseModel):
     timeout_seconds: int = Field(default=120, ge=5)
 
 
-class BrowserConfig(BaseModel):
-    """Runtime settings for the Docker-managed Lightpanda browser."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    image: str = Field(default="lightpanda/browser:nightly")
-    disable_telemetry: bool = Field(default=True)
-    wait_ms: int = Field(default=7000, ge=250)
-    wait_until: str = Field(default="networkidle")
-    obey_robots: bool = Field(default=True)
-    max_content_chars: int = Field(default=24000, ge=1000)
-    min_useful_chars: int = Field(default=300, ge=50)
-    min_partial_chars: int = Field(default=120, ge=20)
-    request_timeout_seconds: int = Field(default=90, ge=5)
-
-
 class SearchConfig(BaseModel):
     """Search backend and discovery settings."""
 
     model_config = ConfigDict(extra="forbid")
 
-    backend: str = Field(default="tavily", pattern="^(tavily)$")
     api_key: str | None = Field(default=None)
     results_per_query: int = Field(default=5, ge=1, le=20)
     max_raw_content_chars: int = Field(default=24000, ge=1000)
-    fallback_backend: str | None = Field(default="duckduckgo")
-    user_agent: str = Field(
-        default=(
-            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-            "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"
-        )
-    )
+    min_source_chars: int = Field(default=300, ge=50)
 
 
 class ReporterConfig(BaseModel):
@@ -200,7 +177,6 @@ class ResearchConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     model: ModelConfig = Field(default_factory=ModelConfig)
-    browser: BrowserConfig = Field(default_factory=BrowserConfig)
     search: SearchConfig = Field(default_factory=SearchConfig)
     reporter: ReporterConfig = Field(default_factory=ReporterConfig)
     dedup: DedupConfig = Field(default_factory=DedupConfig)

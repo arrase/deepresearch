@@ -9,7 +9,6 @@ from collections.abc import Iterable
 from urllib.parse import urlparse
 
 from ...state import (
-    BrowserPageStatus,
     CuratedEvidence,
     Gap,
     ResearchTopic,
@@ -207,15 +206,13 @@ def rank_topics_for_source(
     return [topic_id for _, _, topic_id in ranked[:limit]]
 
 
-def classify_browser_payload(
+def classify_source_content(
     *,
     content: str,
-    error: str | None,
-    exit_code: int | None,
-    min_partial_chars: int,
-    min_useful_chars: int,
-) -> BrowserPageStatus:
-    error_text = (error or "").lower()
+    diagnostics: str | None,
+    min_source_chars: int,
+) -> SourceDiscardReason | None:
+    error_text = (diagnostics or "").lower()
     content_text = content.lower()
     blocked_tokens = (
         "blocked by robots",
@@ -239,24 +236,20 @@ def classify_browser_payload(
     )
 
     if any(token in error_text for token in blocked_tokens) or any(token in content_text for token in blocked_tokens):
-        return BrowserPageStatus.BLOCKED
+        return SourceDiscardReason.BLOCKED
 
     if error_text:
         if any(token in error_text for token in ("404", "not found", "dns", "timed out", "timeout")):
-            return BrowserPageStatus.RECOVERABLE_ERROR
-        if not content.strip() and (
-            exit_code not in (None, 0) or any(token in error_text for token in technical_tokens)
-        ):
-            return BrowserPageStatus.RECOVERABLE_ERROR
+            return SourceDiscardReason.TECHNICAL_ERROR
+        if not content.strip() and any(token in error_text for token in technical_tokens):
+            return SourceDiscardReason.TECHNICAL_ERROR
 
     chars = len(content.strip())
-    if chars >= min_useful_chars:
-        return BrowserPageStatus.USEFUL
-    if chars >= min_partial_chars:
-        return BrowserPageStatus.PARTIAL
+    if chars >= min_source_chars:
+        return None
     if error_text:
-        return BrowserPageStatus.RECOVERABLE_ERROR
-    return BrowserPageStatus.EMPTY
+        return SourceDiscardReason.TECHNICAL_ERROR
+    return SourceDiscardReason.EMPTY
 
 
 def enrich_gaps_with_search_terms(gaps: list[Gap], plan: list[ResearchTopic]) -> list[Gap]:

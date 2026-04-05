@@ -7,7 +7,7 @@ from deepresearch.core.payloads import PlannerPayload
 
 def _planner_variables() -> dict[str, object]:
     return {
-        "query": "What is Lightpanda?",
+        "query": "What is Tavily?",
         "has_subqueries": False,
         "coverage_summary": "- No subqueries yet.",
         "source_balance_summary": "- No evidence has been accepted yet.",
@@ -29,8 +29,8 @@ def test_llmworkers_parse_response_returns_usage(monkeypatch, tmp_path) -> None:
         lambda llm, messages: LLMInvocation(
             content=(
                 '{"subqueries": [{"question": "Capabilities", "rationale": '
-                '"Understand product", "search_terms": ["lightpanda capabilities"]}], '
-                '"search_intents": [], "hypotheses": ["Lightpanda is a browser"]}'
+                '"Understand product", "search_terms": ["tavily capabilities"]}], '
+                '"search_intents": [], "hypotheses": ["Tavily is a research API"]}'
             ),
             usage={"input_tokens": 12, "output_tokens": 7, "total_tokens": 19},
         ),
@@ -50,7 +50,7 @@ def test_llmworkers_repair_flow_returns_repaired_payload(monkeypatch, tmp_path) 
         LLMInvocation(
             content=(
                 '{"subqueries": [{"question": "Limitations", "rationale": '
-                '"Need weaknesses", "search_terms": ["lightpanda limitations"]}], '
+                '"Need weaknesses", "search_terms": ["tavily limitations"]}], '
                 '"search_intents": [], "hypotheses": []}'
             ),
             usage={"input_tokens": 14, "output_tokens": 9, "total_tokens": 23},

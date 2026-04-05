@@ -75,13 +75,13 @@ def test_load_rejects_unknown_root_sections(tmp_path) -> None:
     config_text = config.config_file_path.read_text(encoding="utf-8")
     config.config_file_path.write_text(
         config_text.replace(
-            "[browser]",
+            "[search]",
             "[context]\n"
             "evidence_budget_ratio = 0.45\n"
             "dossier_budget_ratio = 0.30\n"
             "local_source_budget_ratio = 0.20\n"
             "safety_margin_ratio = 0.05\n\n"
-            "[browser]",
+            "[search]",
         ),
         encoding="utf-8",
     )
@@ -133,9 +133,9 @@ def test_runtime_default_verbosity_is_zero(tmp_path) -> None:
 
 
 def test_parse_args_accepts_verbosity(monkeypatch) -> None:
-    monkeypatch.setattr(sys, "argv", ["deepresearch", "What is Lightpanda?", "--verbosity", "3"])
+    monkeypatch.setattr(sys, "argv", ["deepresearch", "What is Tavily search?", "--verbosity", "3"])
 
     args = parse_args()
 
-    assert args.query == "What is Lightpanda?"
+    assert args.query == "What is Tavily search?"
     assert args.verbosity == 3

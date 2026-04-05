@@ -10,16 +10,27 @@ from langsmith import traceable
 from ..core.utils import (
     build_search_query,
     choose_active_topic,
+    classify_source_content,
     deduplicate_candidates,
     extract_domain,
     prune_queue_by_domain,
     reformulate_queries,
+    sanitize_source_title,
     score_candidate,
+    split_source_content,
     summarize_gaps,
     summarize_search_candidates,
     validate_candidate_for_topic,
 )
-from ..state import DiscardedSource, ResearchState, SearchAttempt, SourceDiscardReason, TopicStatus
+from ..state import (
+    DiscardedSource,
+    ResearchState,
+    SearchAttempt,
+    SearchCandidate,
+    SourceDiscardReason,
+    SourceRecord,
+    TopicStatus,
+)
 from .base import log_node_activity, log_runtime_event
 
 if TYPE_CHECKING:
@@ -29,6 +40,39 @@ if TYPE_CHECKING:
 class SourceManagerNode:
     def __init__(self, runtime: ResearchRuntime) -> None:
         self._runtime = runtime
+
+    def _prepare_candidate(
+        self,
+        candidate: SearchCandidate,
+    ) -> tuple[SearchCandidate | None, DiscardedSource | None, SourceRecord]:
+        raw_content, diagnostics = split_source_content(
+            candidate.raw_content or "",
+            max_chars=self._runtime.config.search.max_raw_content_chars,
+        )
+        url = candidate.normalized_url or candidate.url
+        title = sanitize_source_title(candidate.title, url) or "Unknown Source"
+        reason = classify_source_content(
+            content=raw_content,
+            diagnostics=diagnostics,
+            min_source_chars=self._runtime.config.search.min_source_chars,
+        )
+        record = SourceRecord(
+            url=url,
+            final_url=url,
+            title=title,
+            extracted_chars=len(raw_content),
+            topic_ids=list(candidate.topic_ids),
+            last_error=diagnostics or (reason.value if reason is not None else None),
+        )
+        if reason is not None:
+            discarded = DiscardedSource(
+                url=url,
+                reason=reason,
+                note=diagnostics or reason.value,
+            )
+            return None, discarded, record
+        prepared = candidate.model_copy(update={"raw_content": raw_content, "title": title})
+        return prepared, None, record
 
     def _select_query(self, state: ResearchState, topic_id: str, fallback_query: str) -> str:
         for intent in reversed(state["search_intents"]):
@@ -76,19 +120,6 @@ class SourceManagerNode:
             max_results=self._runtime.config.search.results_per_query,
         )
 
-        # Fallback to DuckDuckGo when the primary backend returns nothing
-        if not raw_results and self._runtime.fallback_search_client is not None:
-            log_runtime_event(
-                self._runtime,
-                "[source_manager] Primary search returned no results, trying fallback",
-                verbosity=1,
-                query=query,
-            )
-            raw_results = self._runtime.fallback_search_client.search(
-                query,
-                max_results=self._runtime.config.search.results_per_query,
-            )
-
         prepared_results = [
             result.model_copy(
                 update={
@@ -119,6 +150,10 @@ class SourceManagerNode:
             reverse=True,
         )
         ranked, pruned = prune_queue_by_domain(ranked, state["curated_evidence"])
+        visited_urls = dict(state["visited_urls"])
+        batch_size = self._runtime.config.runtime.search_batch_size
+        current_batch: list[SearchCandidate] = []
+        remaining_queue: list[SearchCandidate] = []
         discarded_sources = [
             *state["discarded_sources"],
             *[
@@ -126,21 +161,34 @@ class SourceManagerNode:
                 for url, reason, note in [*discarded, *filtered, *pruned]
             ],
         ]
+        for candidate in ranked:
+            prepared_candidate, discarded_source, source_record = self._prepare_candidate(candidate)
+            if discarded_source is not None:
+                discarded_sources.append(discarded_source)
+                visited_urls[source_record.url] = source_record
+                continue
+            if prepared_candidate is None:
+                continue
+            if len(current_batch) < batch_size:
+                current_batch.append(prepared_candidate)
+                visited_urls[source_record.url] = source_record
+            else:
+                remaining_queue.append(prepared_candidate)
         search_attempt = SearchAttempt(
             topic_id=active_topic.id,
             query=query,
             iteration=state["current_iteration"] + 1,
             discovered_urls=len(raw_results),
-            accepted_urls=min(len(ranked), self._runtime.config.runtime.search_batch_size),
+            accepted_urls=len(current_batch),
             repeated_urls=repeated_urls,
-            empty_result=not ranked,
-            technical_error=None if ranked else "no_results",
+            empty_result=not current_batch,
+            technical_error=None if current_batch else "no_results",
         )
 
-        if not ranked:
+        if not current_batch:
             log_runtime_event(
                 self._runtime,
-                "[source_manager] Search produced no new candidates",
+                "[source_manager] Search produced no usable candidates",
                 verbosity=1,
                 topic_id=active_topic.id,
                 query=query,
@@ -153,6 +201,7 @@ class SourceManagerNode:
                 "completed_search_queries": [*state["completed_search_queries"], query],
                 "failed_queries": [*state["failed_queries"], query],
                 "discarded_sources": discarded_sources,
+                "visited_urls": visited_urls,
                 "candidate_queue": [],
                 "current_batch": [],
                 "current_iteration": state["current_iteration"] + 1,
@@ -163,9 +212,6 @@ class SourceManagerNode:
                 "useful_source_in_cycle": False,
             }
 
-        batch_size = self._runtime.config.runtime.search_batch_size
-        current_batch = ranked[:batch_size]
-        remaining_queue = ranked[batch_size:]
         log_runtime_event(self._runtime, "[source_manager] Discovered candidate", verbosity=1, url=current_batch[0].url)
         log_runtime_event(
             self._runtime,
@@ -185,6 +231,7 @@ class SourceManagerNode:
             "topic_attempts": topic_attempts,
             "search_history": [*state["search_history"], search_attempt],
             "completed_search_queries": [*state["completed_search_queries"], query],
+            "visited_urls": visited_urls,
             "candidate_queue": remaining_queue,
             "current_batch": current_batch,
             "discarded_sources": discarded_sources,
@@ -193,7 +240,6 @@ class SourceManagerNode:
             "replan_requested": False,
             "new_evidence_in_cycle": 0,
             "merged_evidence_in_cycle": 0,
-            "useful_source_in_cycle": False,
-            "browser_results": [],
+            "useful_source_in_cycle": True,
             "extracted_evidence_buffer": [],
         }

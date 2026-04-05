@@ -13,35 +13,24 @@ from .core.llm import LLMWorkers
 from .graph import build_graph
 from .observability import configure_logging, langsmith_tracing
 from .output_utils import generate_pdf
-from .runtime import ResearchRuntime, SearchClientLike
+from .runtime import ResearchRuntime
 from .state import build_initial_state
-from .tools import DuckDuckGoSearchClient, LightpandaDockerManager, TavilySearchClient
+from .tools import TavilySearchClient
 
 logger = logging.getLogger(__name__)
 
 
 def build_runtime(config: ResearchConfig) -> ResearchRuntime:
-    search_client: SearchClientLike
-    if config.search.backend != "tavily":
-        raise ValueError(f"Unsupported search backend: {config.search.backend}")
-    search_client = TavilySearchClient(config.search)
-
-    fallback_client: SearchClientLike | None = None
-    if config.search.fallback_backend == "duckduckgo":
-        fallback_client = DuckDuckGoSearchClient(config.search)
-
     return ResearchRuntime(
         config=config,
         context_manager=ContextManager(config),
         llm_workers=LLMWorkers(config),
-        browser=LightpandaDockerManager(config.browser),
-        search_client=search_client,
-        fallback_search_client=fallback_client,
+        search_client=TavilySearchClient(config.search),
     )
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Auditable deep research with LangGraph, Ollama, and Lightpanda")
+    parser = argparse.ArgumentParser(description="Auditable deep research with LangGraph, Ollama, and Tavily")
     parser.add_argument("query", help="Open-ended research question")
 
     output_group = parser.add_mutually_exclusive_group()
@@ -100,7 +89,7 @@ def cli() -> int:
     graph = build_graph(runtime)
     trace_metadata = {
         "model_name": config.model.model_name,
-        "search_backend": config.search.backend,
+        "search_backend": "tavily",
         "config_root": str(config.config_root),
     }
     with langsmith_tracing(config, metadata=trace_metadata):

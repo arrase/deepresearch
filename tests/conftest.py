@@ -9,7 +9,6 @@ from deepresearch.context_manager import ContextManager
 from deepresearch.core.payloads import CoveragePayload, EvidenceDraft, EvidencePayload, PlannerPayload
 from deepresearch.runtime import ResearchRuntime
 from deepresearch.state import (
-    BrowserPageStatus,
     ConfidenceLevel,
     CuratedEvidence,
     EvidenceSourceRef,
@@ -19,7 +18,6 @@ from deepresearch.state import (
     ResearchTopic,
     SearchCandidate,
     SearchIntent,
-    SourceVisit,
     TopicStatus,
 )
 
@@ -33,6 +31,15 @@ class FakeSearchClient:
                 title="Example report",
                 snippet=f"Result for {query}",
                 domain="example.com",
+                raw_content=(
+                    "# Example report\n\n"
+                    "Fusion demand is rising in 2026 according to multiple suppliers and project developers. "
+                    "Utilities are increasing pilot budgets, industrial buyers are evaluating procurement options, "
+                    "and analysts describe stronger near-term interest in demonstration-scale deployments. "
+                    "Fusion demand is rising in 2026 according to multiple suppliers and project developers. "
+                    "Utilities are increasing pilot budgets, industrial buyers are evaluating procurement options, "
+                    "and analysts describe stronger near-term interest in demonstration-scale deployments. "
+                ),
             )
         ]
 
@@ -55,25 +62,15 @@ class RecordingSearchClient:
                 title="Playwright guide",
                 snippet="Playwright testing framework from Microsoft",
                 domain="example.com",
+                raw_content=(
+                    "# Playwright guide\n\n"
+                    "Playwright supports browser automation and testing across modern web applications. "
+                    "The framework covers scripting, page interaction, assertions, and cross-browser execution. "
+                    "Playwright supports browser automation and testing across modern web applications. "
+                    "The framework covers scripting, page interaction, assertions, and cross-browser execution. "
+                ),
             )
         ]
-
-
-class FakeBrowser:
-    def fetch(self, url: str) -> SourceVisit:
-        return SourceVisit(
-            url=url,
-            final_url=url,
-            status=BrowserPageStatus.USEFUL,
-            title="Example report",
-            content="# Example report\nFusion demand is rising in 2026.",
-            excerpt="Fusion demand is rising in 2026.",
-        )
-
-
-class FailIfCalledBrowser:
-    def fetch(self, url: str) -> SourceVisit:
-        raise AssertionError(f"Browser should not be called for url={url}")
 
 
 class FakeLLMWorkers:
@@ -189,7 +186,6 @@ def fake_runtime(research_config: ResearchConfig, context_manager: ContextManage
         config=research_config,
         context_manager=context_manager,
         llm_workers=FakeLLMWorkers(),
-        browser=FakeBrowser(),
         search_client=FakeSearchClient(),
     )
 

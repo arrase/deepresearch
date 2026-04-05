@@ -63,9 +63,9 @@ def test_deduplicate_candidates_merges_topic_ids() -> None:
 def test_rank_topics_for_source_prefers_matching_topic() -> None:
     topic_1 = ResearchTopic(
         id="topic_1",
-        question="What is Lightpanda?",
+        question="What is Tavily?",
         rationale="r",
-        search_terms=["lightpanda framework"],
+        search_terms=["tavily research api"],
     )
     topic_2 = ResearchTopic(
         id="topic_2",
@@ -92,10 +92,10 @@ def test_choose_active_topic_prefers_in_progress_topic_for_depth() -> None:
     )
     in_progress = ResearchTopic(
         id="topic_focus",
-        question="What are Lightpanda performance characteristics?",
+        question="What are Tavily search capabilities?",
         rationale="Need comparative depth",
         status=TopicStatus.IN_PROGRESS,
-        search_terms=["lightpanda benchmark"],
+        search_terms=["tavily search api"],
     )
 
     chosen = choose_active_topic(

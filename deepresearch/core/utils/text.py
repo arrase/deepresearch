@@ -1,4 +1,4 @@
-"""Text chunking, token estimation, excerpt helpers, and browser payload sanitization."""
+"""Text chunking, token estimation, excerpt helpers, and source-content sanitization."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from collections.abc import Iterable
 
 from .url import extract_domain
 
-_BROWSER_NOISE_TOKENS = (
+_SOURCE_NOISE_TOKENS = (
     "$time=",
     "$scope=",
     "$level=",
@@ -31,15 +31,15 @@ def short_excerpt(text: str, limit: int = 320) -> str:
     return " ".join(text.split())[:limit].strip()
 
 
-def is_browser_noise_line(line: str) -> bool:
+def is_source_noise_line(line: str) -> bool:
     normalized = " ".join(line.split())
     if not normalized:
         return False
     lowered = normalized.lower()
-    return any(token in lowered for token in _BROWSER_NOISE_TOKENS)
+    return any(token in lowered for token in _SOURCE_NOISE_TOKENS)
 
 
-def split_browser_payload(text: str, *, max_chars: int | None = None) -> tuple[str, str]:
+def split_source_content(text: str, *, max_chars: int | None = None) -> tuple[str, str]:
     clean_lines: list[str] = []
     diagnostic_lines: list[str] = []
 
@@ -49,7 +49,7 @@ def split_browser_payload(text: str, *, max_chars: int | None = None) -> tuple[s
             if clean_lines and clean_lines[-1] != "":
                 clean_lines.append("")
             continue
-        if is_browser_noise_line(line):
+        if is_source_noise_line(line):
             diagnostic_lines.append(" ".join(line.split())[:300])
             continue
         clean_lines.append(raw_line.rstrip())
@@ -67,7 +67,7 @@ def sanitize_source_title(title: str, url: str | None = None) -> str:
     fallback = extract_domain(url) if url else ""
     if not normalized:
         return fallback
-    if any(token in lowered for token in _BROWSER_NOISE_TOKENS):
+    if any(token in lowered for token in _SOURCE_NOISE_TOKENS):
         return fallback
     if not re.search(r"[a-z0-9]", lowered):
         return fallback

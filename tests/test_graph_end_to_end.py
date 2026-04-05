@@ -1,15 +1,14 @@
 from deepresearch.context_manager import ContextManager
 from deepresearch.core.payloads import PlannerPayload
+from deepresearch.core.utils import canonicalize_url
 from deepresearch.graph import build_graph
 from deepresearch.nodes import SourceManagerNode
 from deepresearch.runtime import ResearchRuntime
 from deepresearch.state import (
-    BrowserPageStatus,
     ResearchState,
     ResearchTopic,
     SearchCandidate,
     SearchIntent,
-    SourceVisit,
     StopReason,
     TopicCoverage,
     TopicStatus,
@@ -18,7 +17,6 @@ from deepresearch.state import (
 from tests.conftest import (
     EmptySearchClient,
     ExhaustedLLMWorkers,
-    FakeBrowser,
     FakeSearchClient,
     FinalContextFullLLMWorkers,
 )
@@ -47,7 +45,6 @@ def test_graph_stops_when_search_finds_nothing(research_config) -> None:
         config=research_config,
         llm_workers=ExhaustedLLMWorkers(),
         search_client=EmptySearchClient(),
-        browser=FakeBrowser(),
         context_manager=ContextManager(research_config),
     )
     graph = build_graph(runtime)
@@ -107,7 +104,6 @@ def test_graph_marks_context_saturation_when_budget_full(research_config) -> Non
         config=research_config,
         llm_workers=ContextSaturationWorkers(),
         search_client=FakeSearchClient(),
-        browser=FakeBrowser(),
         context_manager=ContextManager(research_config),
     )
     graph = build_graph(runtime)
@@ -123,28 +119,29 @@ def test_graph_marks_context_saturation_when_budget_full(research_config) -> Non
     assert result["synthesis_budget"].final_context_full is True
 
 
-def test_graph_blocked_page_does_not_create_evidence_or_sources(research_config) -> None:
-    class BlockedBrowser:
-        def fetch(self, url: str) -> SourceVisit:
-            return SourceVisit(
-                url=url,
-                final_url=url,
-                status=BrowserPageStatus.BLOCKED,
-                title='$time=1775261612956 $scope=http $level=warn $msg="blocked by robots"',
-                content="",
-                error='blocked by robots',
-            )
+def test_graph_blocked_source_does_not_create_evidence_or_sources(research_config) -> None:
+    class BlockedSearchClient:
+        def search(self, query: str, *, max_results: int | None = None) -> list[SearchCandidate]:
+            return [
+                SearchCandidate(
+                    url="https://www.linkedin.com/posts/example",
+                    normalized_url="https://www.linkedin.com/posts/example",
+                    title="LinkedIn activity",
+                    snippet="Robots blocked",
+                    domain="linkedin.com",
+                    raw_content='$time=1775261612956 $scope=http $level=warn $msg="blocked by robots"',
+                )
+            ]
 
     runtime = ResearchRuntime(
         config=research_config,
         llm_workers=ExhaustedLLMWorkers(),
-        search_client=FakeSearchClient(),
-        browser=BlockedBrowser(),
+        search_client=BlockedSearchClient(),
         context_manager=ContextManager(research_config),
     )
     graph = build_graph(runtime)
     initial_state = build_initial_state(
-        "Lightpanda vs Playwright",
+        "Compare browser automation stacks",
         max_iterations=1,
     )
 
@@ -167,6 +164,12 @@ def test_source_manager_prefers_article_over_feed_for_news_query(research_config
                     title="SUCESOS archivos - GC Diario",
                     snippet="Sucesos en castellano y Galicia",
                     domain="gcdiario.com",
+                    raw_content=(
+                        "Sucesos de ultima hora en Galicia y otras regiones. "
+                        "Resumen de titulares agregados sin detalle del incidente. "
+                        "Sucesos de ultima hora en Galicia y otras regiones. "
+                        "Resumen de titulares agregados sin detalle del incidente. "
+                    ),
                 ),
                 SearchCandidate(
                     url="https://castellonplaza.com/sucesos/castellon-detencion-ayer-centro",
@@ -174,6 +177,14 @@ def test_source_manager_prefers_article_over_feed_for_news_query(research_config
                     title="Detenido un hombre tras un altercado en Castellon",
                     snippet="Sucesos de ayer en Castellon con intervencion policial en el centro.",
                     domain="castellonplaza.com",
+                    raw_content=(
+                        "La noticia detalla un altercado ocurrido ayer en el centro de Castellon "
+                        "con intervencion policial, "
+                        "testigos, contexto del incidente y consecuencias posteriores para las personas implicadas. "
+                        "La noticia detalla un altercado ocurrido ayer en el centro de Castellon "
+                        "con intervencion policial, "
+                        "testigos, contexto del incidente y consecuencias posteriores para las personas implicadas. "
+                    ),
                 ),
             ]
 
@@ -181,7 +192,6 @@ def test_source_manager_prefers_article_over_feed_for_news_query(research_config
         config=research_config,
         llm_workers=ExhaustedLLMWorkers(),
         search_client=MixedNewsSearchClient(),
-        browser=FakeBrowser(),
         context_manager=ContextManager(research_config),
     )
     node = SourceManagerNode(runtime)
@@ -204,3 +214,5 @@ def test_source_manager_prefers_article_over_feed_for_news_query(research_config
     assert result["current_batch"]
     assert result["current_batch"][0].url == "https://castellonplaza.com/sucesos/castellon-detencion-ayer-centro"
     assert any(item.url == "https://gcdiario.com/seccion/sucesos/feed" for item in result["discarded_sources"])
+    expected_url = canonicalize_url("https://castellonplaza.com/sucesos/castellon-detencion-ayer-centro")
+    assert expected_url in result["visited_urls"]

@@ -93,7 +93,7 @@ class EvaluatorNode:
                 topic.id == active_topic_id
                 and accepted_count == 0
                 and attempts >= min_attempts
-                and state.get("technical_reason") in {"no_results", "no_topics", "browser_error"}
+                and state.get("technical_reason") in {"no_results", "no_topics", "search_error"}
                 and self._runtime.config.runtime.allow_dynamic_replan
             )
             if completed:
@@ -119,7 +119,7 @@ class EvaluatorNode:
         )
         consecutive_technical_failures = (
             state["consecutive_technical_failures"] + 1
-            if state.get("technical_reason") in {"no_results", "no_topics", "search_error", "browser_error"}
+            if state.get("technical_reason") in {"no_results", "no_topics", "search_error"}
             else 0
         )
         synthesis_budget = self._runtime.context_manager.synthesis_budget(
@@ -193,7 +193,6 @@ class EvaluatorNode:
             "replan_requested": False if stop_reason else replan_requested,
             "llm_usage": llm_usage,
             "current_batch": [],
-            "browser_results": [],
             "extracted_evidence_buffer": [],
             "technical_reason": None if stop_reason else state.get("technical_reason"),
         }

@@ -9,15 +9,11 @@ if TYPE_CHECKING:
     from .config import ResearchConfig
     from .context_manager import ContextManager, NodeContext
     from .core.payloads import CoveragePayload, EvidencePayload, PlannerPayload
-    from .state import FinalReport, SearchCandidate, SourceVisit
+    from .state import FinalReport, SearchCandidate
 
 
 class SearchClientLike(Protocol):
     def search(self, query: str, *, max_results: int | None = None) -> list[SearchCandidate]: ...
-
-
-class BrowserLike(Protocol):
-    def fetch(self, url: str) -> SourceVisit: ...
 
 
 class LLMWorkersLike(Protocol):
@@ -47,6 +43,4 @@ class ResearchRuntime:
     config: ResearchConfig
     context_manager: ContextManager
     llm_workers: LLMWorkersLike
-    browser: BrowserLike
     search_client: SearchClientLike
-    fallback_search_client: SearchClientLike | None = None
