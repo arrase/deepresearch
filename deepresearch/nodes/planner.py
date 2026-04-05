@@ -8,7 +8,7 @@ from langsmith import traceable
 
 from ..core.utils import summarize_subqueries
 from ..state import ResearchState, SearchIntent, TopicStatus
-from .base import log_node_activity, log_runtime_event
+from .base import log_node_activity, log_runtime_event, update_stage_llm_usage
 
 if TYPE_CHECKING:
     from ..runtime import ResearchRuntime
@@ -17,6 +17,25 @@ if TYPE_CHECKING:
 class PlannerNode:
     def __init__(self, runtime: ResearchRuntime) -> None:
         self._runtime = runtime
+
+    def _inject_verbatim_intent(
+        self,
+        state: ResearchState,
+        search_intents: list[SearchIntent],
+        active_topic_id: str | None,
+    ) -> list[SearchIntent]:
+        if state["search_intents"] or not state["query"].strip():
+            return search_intents
+
+        first_topic_ids = [active_topic_id] if active_topic_id else []
+        verbatim = SearchIntent(
+            query=state["query"].strip(),
+            rationale="Verbatim user query",
+            topic_ids=first_topic_ids,
+        )
+        if any(intent.query.strip().lower() == verbatim.query.lower() for intent in search_intents):
+            return search_intents
+        return [verbatim, *search_intents]
 
     @traceable(name="planner-node")
     @log_node_activity("planner", "Planning: {query}")
@@ -37,21 +56,8 @@ class PlannerNode:
             if pending_topics:
                 active_topic_id = pending_topics[0].id
 
-        # Prepend the user's verbatim query as the first search intent so the
-        # pipeline always starts with an unmodified search attempt.
-        new_intents = list(payload.search_intents)
-        if not state["search_intents"] and state["query"].strip():
-            first_topic_ids = [active_topic_id] if active_topic_id else []
-            verbatim = SearchIntent(
-                query=state["query"].strip(),
-                rationale="Verbatim user query",
-                topic_ids=first_topic_ids,
-            )
-            # Avoid duplicate if the LLM already generated the same query
-            if not any(intent.query.strip().lower() == verbatim.query.lower() for intent in new_intents):
-                new_intents.insert(0, verbatim)
-
-        llm_usage = {**state.get("llm_usage", {}), "planner": usage}
+        new_intents = self._inject_verbatim_intent(state, list(payload.search_intents), active_topic_id)
+        llm_usage = update_stage_llm_usage(state.get("llm_usage", {}), "planner", usage)
         log_runtime_event(self._runtime, "[planner] Agenda updated", verbosity=1, new=len(new_topics), **usage)
         log_runtime_event(
             self._runtime,

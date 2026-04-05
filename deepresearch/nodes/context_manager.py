@@ -18,10 +18,25 @@ class ContextManagerNode:
     def __init__(self, runtime: ResearchRuntime) -> None:
         self._runtime = runtime
 
+    def _discard_no_evidence_sources(self, state: ResearchState) -> list[DiscardedSource]:
+        discarded = list(state["discarded_sources"])
+        if state["current_batch"] and not state["extracted_evidence_buffer"]:
+            discarded.extend(
+                DiscardedSource(
+                    url=candidate.url,
+                    reason=SourceDiscardReason.NO_EVIDENCE,
+                    note="No evidence extracted from this source",
+                )
+                for candidate in state["current_batch"]
+            )
+        return discarded
+
+    def _prompt_fit_tokens(self, curated: list) -> int:
+        return sum(item.prompt_fit_tokens_estimate for item in curated)
+
     @traceable(name="context-manager-node")
     @log_node_activity("context_manager", "Curating evidence for: {query}")
     def __call__(self, state: ResearchState) -> dict:
-        current_batch = state["current_batch"]
         drafts = state["extracted_evidence_buffer"]
         curated, accepted, merged_count, exact_added_tokens = curate_evidence(
             state["curated_evidence"],
@@ -31,17 +46,7 @@ class ContextManagerNode:
         )
         dossier = update_working_dossier(state["working_dossier"], accepted)
         coverage = compute_topic_coverages(state["plan"], curated, state["topic_attempts"])
-
-        discarded = list(state["discarded_sources"])
-        if current_batch and not drafts:
-            for candidate in current_batch:
-                discarded.append(
-                    DiscardedSource(
-                        url=candidate.url,
-                        reason=SourceDiscardReason.NO_EVIDENCE,
-                        note="No evidence extracted from this source",
-                    )
-                )
+        discarded = self._discard_no_evidence_sources(state)
 
         log_runtime_event(self._runtime, "[context_manager] Curated evidence", verbosity=1, accepted=len(accepted))
         log_runtime_event(
@@ -57,7 +62,7 @@ class ContextManagerNode:
             "topic_coverage": coverage,
             "discarded_sources": discarded,
             "accumulated_evidence_tokens_exact": state["accumulated_evidence_tokens_exact"] + exact_added_tokens,
-            "accumulated_evidence_tokens_prompt_fit": sum(item.prompt_fit_tokens_estimate for item in curated),
+            "accumulated_evidence_tokens_prompt_fit": self._prompt_fit_tokens(curated),
             "new_evidence_in_cycle": len(accepted),
             "merged_evidence_in_cycle": merged_count,
         }

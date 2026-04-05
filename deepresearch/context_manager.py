@@ -31,20 +31,21 @@ class ContextManager:
         self._config = config
         self._prompt_loader = PromptTemplateLoader(config.prompts_dir, strict_templates=True)
 
+    def _render_bulleted(self, lines: list[str], *, empty_text: str = "- None") -> str:
+        if not lines:
+            return empty_text
+        return "\n".join(lines)
+
     def _topic_lists(self, state: ResearchState) -> tuple[list[ResearchTopic], list[ResearchTopic]]:
         active = [topic for topic in state["plan"] if topic.status in {TopicStatus.PENDING, TopicStatus.IN_PROGRESS}]
         resolved = [topic for topic in state["plan"] if topic.status == TopicStatus.COMPLETED]
         return active, resolved
 
     def _render_topics(self, topics: list[ResearchTopic]) -> str:
-        if not topics:
-            return "- None"
-        return "\n".join(f"- {topic.id}: {topic.question}" for topic in topics)
+        return self._render_bulleted([f"- {topic.id}: {topic.question}" for topic in topics])
 
     def _render_gaps(self, gaps: list[Gap]) -> str:
-        if not gaps:
-            return "- None"
-        return "\n".join(f"- {gap.topic_id}: {gap.description}" for gap in gaps[:5])
+        return self._render_bulleted([f"- {gap.topic_id}: {gap.description}" for gap in gaps[:5]])
 
     def _render_coverage_summary(self, state: ResearchState) -> str:
         if not state["plan"]:
@@ -94,12 +95,28 @@ class ContextManager:
         )
         return max(0, self._config.model.num_ctx - reserved_output - self._config.reporter.prompt_margin_tokens)
 
+    def _half_prompt_budget(self) -> int:
+        return max(1, self._available_prompt_budget() // 2)
+
     def _build_dossier(self, state: ResearchState) -> str:
         chunks: list[str] = []
         for topic in state["plan"]:
             summary = state["working_dossier"].topic_summaries.get(topic.id, "")
             chunks.append(f"{topic.id} | {topic.question}\n{summary}".strip())
         return "\n\n".join(chunk for chunk in chunks if chunk)
+
+    def _context_evidence(
+        self,
+        state: ResearchState,
+        *,
+        topic_ids: list[str],
+        budget_tokens: int,
+    ) -> list[CuratedEvidence]:
+        return select_evidence_for_context(
+            state["curated_evidence"],
+            topic_ids=topic_ids,
+            budget_tokens=budget_tokens,
+        )
 
     def synthesis_budget(self, state: ResearchState) -> SynthesisBudget:
         dossier = self._build_dossier(state)
@@ -171,10 +188,10 @@ class ContextManager:
         )
 
     def extractor_context(self, state: ResearchState, topic: ResearchTopic, local_source: str) -> NodeContext:
-        evidence = select_evidence_for_context(
-            state["curated_evidence"],
+        evidence = self._context_evidence(
+            state,
             topic_ids=[topic.id],
-            budget_tokens=max(1, self._available_prompt_budget() // 2),
+            budget_tokens=self._half_prompt_budget(),
         )
         return NodeContext(
             query=state["query"],
@@ -187,10 +204,10 @@ class ContextManager:
     def evaluator_context(self, state: ResearchState) -> NodeContext:
         active, resolved = self._topic_lists(state)
         active_topic_id = state.get("active_topic_id")
-        evidence = select_evidence_for_context(
-            state["curated_evidence"],
+        evidence = self._context_evidence(
+            state,
             topic_ids=[active_topic_id] if active_topic_id else [],
-            budget_tokens=max(1, self._available_prompt_budget() // 2),
+            budget_tokens=self._half_prompt_budget(),
         )
         return NodeContext(
             query=state["query"],
@@ -208,8 +225,8 @@ class ContextManager:
         topic_ids = [topic.id for topic in state["plan"] if topic.status == TopicStatus.COMPLETED]
         if not topic_ids:
             topic_ids = [topic.id for topic in state["plan"]]
-        evidence = select_evidence_for_context(
-            state["curated_evidence"],
+        evidence = self._context_evidence(
+            state,
             topic_ids=topic_ids,
             budget_tokens=budget.available_prompt_tokens,
         )

@@ -8,9 +8,10 @@ from langsmith import traceable
 
 from ..core.utils import build_report_sources
 from ..state import ConfidenceLevel, FinalReport, ResearchState
-from .base import log_node_activity, log_runtime_event
+from .base import log_node_activity, log_runtime_event, update_stage_llm_usage
 
 if TYPE_CHECKING:
+    from ..context_manager import NodeContext
     from ..runtime import ResearchRuntime
 
 
@@ -44,28 +45,36 @@ class SynthesizerNode:
             markdown_report=markdown,
         )
 
+    def _failed_report(self, state: ResearchState) -> FinalReport:
+        return FinalReport(
+            query=state["query"],
+            executive_answer="Synthesis failed.",
+            key_findings=["Error in synthesis."],
+            confidence=ConfidenceLevel.LOW,
+            evidence_ids=[item.evidence_id for item in state["curated_evidence"]],
+            cited_sources=build_report_sources(state["curated_evidence"]),
+            markdown_report="# Research Report\n\nSynthesis failed.",
+        )
+
+    def _generate_report(
+        self,
+        state: ResearchState,
+        context: NodeContext,
+    ) -> tuple[FinalReport, dict[str, int]]:
+        if not state["curated_evidence"]:
+            return self._fallback_report(state), {}
+
+        try:
+            return self._runtime.llm_workers.synthesize_report_with_usage(context, query=state["query"])
+        except (ValueError, KeyError, OSError):
+            return self._failed_report(state), {}
+
     @traceable(name="synthesizer-node")
     @log_node_activity("synthesizer", "Synthesizing report: {query}")
     def __call__(self, state: ResearchState) -> dict:
         context = self._runtime.context_manager.synthesizer_context(state)
         synthesis_budget = state["synthesis_budget"] or self._runtime.context_manager.synthesis_budget(state)
-        if not state["curated_evidence"]:
-            usage: dict[str, int] = {}
-            report = self._fallback_report(state)
-        else:
-            try:
-                report, usage = self._runtime.llm_workers.synthesize_report_with_usage(context, query=state["query"])
-            except (ValueError, KeyError, OSError):
-                usage = {}
-                report = FinalReport(
-                    query=state["query"],
-                    executive_answer="Synthesis failed.",
-                    key_findings=["Error in synthesis."],
-                    confidence=ConfidenceLevel.LOW,
-                    evidence_ids=[item.evidence_id for item in state["curated_evidence"]],
-                    cited_sources=build_report_sources(state["curated_evidence"]),
-                    markdown_report="# Research Report\n\nSynthesis failed.",
-                )
+        report, usage = self._generate_report(state, context)
         report.stop_reason = state.get("stop_reason")
         report.context_window_tokens = synthesis_budget.context_window_tokens
         report.reserved_output_tokens = synthesis_budget.reserved_output_tokens
@@ -73,7 +82,7 @@ class SynthesizerNode:
         report.evidence_tokens = synthesis_budget.selected_evidence_tokens
         report.available_prompt_tokens = synthesis_budget.available_prompt_tokens
         report.llm_usage = usage
-        llm_usage = {**state.get("llm_usage", {}), "synthesizer": usage}
+        llm_usage = update_stage_llm_usage(state.get("llm_usage", {}), "synthesizer", usage)
         log_runtime_event(
             self._runtime,
             "[synthesizer] Report generated",

@@ -12,8 +12,8 @@ from typing import TYPE_CHECKING
 from langsmith import traceable
 
 from ..core.utils import sanitize_source_title, select_relevant_chunks, split_text
-from ..state import EvidenceDraft, ResearchState
-from .base import log_node_activity, log_runtime_event
+from ..state import EvidenceDraft, ResearchState, ResearchTopic, SearchCandidate
+from .base import accumulate_usage_totals, log_node_activity, log_runtime_event, update_stage_llm_usage
 
 if TYPE_CHECKING:
     from ..runtime import ResearchRuntime
@@ -25,6 +25,55 @@ _MAX_EXTRACTION_CONTENT = 4000
 class ExtractorNode:
     def __init__(self, runtime: ResearchRuntime) -> None:
         self._runtime = runtime
+
+    def _build_local_source(self, candidate: SearchCandidate, topic: ResearchTopic) -> str:
+        terms = topic.search_terms or [topic.question]
+        chunks = select_relevant_chunks(split_text(candidate.raw_content), terms, 8)
+        max_chars = min(self._runtime.config.search.max_raw_content_chars, _MAX_EXTRACTION_CONTENT)
+        return "\n\n".join(chunks)[:max_chars]
+
+    def _extract_candidate(
+        self,
+        state: ResearchState,
+        topic: ResearchTopic,
+        candidate: SearchCandidate,
+    ) -> tuple[list[EvidenceDraft], dict[str, int]]:
+        if not candidate.raw_content.strip():
+            return [], {}
+
+        local_source = self._build_local_source(candidate, topic)
+        context = self._runtime.context_manager.extractor_context(state, topic, local_source)
+        payload, usage = self._runtime.llm_workers.extract_evidence_with_usage(context)
+        drafts = [
+            EvidenceDraft(
+                topic_id=topic.id,
+                source_url=candidate.normalized_url or candidate.url,
+                source_title=sanitize_source_title(
+                    candidate.title,
+                    candidate.normalized_url or candidate.url,
+                )
+                or "Unknown Source",
+                claim=item.claim,
+                quotation=item.quotation,
+                locator=item.citation_locator,
+                summary=item.summary,
+                extractor_output_tokens=usage.get("output_tokens", 0),
+                extractor_input_tokens=usage.get("input_tokens", 0),
+                extraction_confidence=item.confidence,
+                relevance_score=item.relevance_score,
+                caveats=item.caveats,
+            )
+            for item in payload.evidences
+        ]
+        log_runtime_event(
+            self._runtime,
+            "[extractor] Extraction complete",
+            verbosity=1,
+            url=candidate.url,
+            count=len(drafts),
+            **usage,
+        )
+        return drafts, usage
 
     @traceable(name="extractor-node")
     @log_node_activity("extractor", "Extracting from: {query}")
@@ -39,51 +88,11 @@ class ExtractorNode:
         total_usage: dict[str, int] = {}
 
         for candidate in candidates:
-            if not candidate.raw_content.strip():
-                continue
-
-            terms = topic.search_terms or [topic.question]
-            chunks = select_relevant_chunks(split_text(candidate.raw_content), terms, 8)
-            max_chars = min(self._runtime.config.search.max_raw_content_chars, _MAX_EXTRACTION_CONTENT)
-            local_source = "\n\n".join(chunks)[:max_chars]
-            context = self._runtime.context_manager.extractor_context(state, topic, local_source)
-            payload, usage = self._runtime.llm_workers.extract_evidence_with_usage(context)
-
-            for key in ("input_tokens", "output_tokens", "total_tokens"):
-                total_usage[key] = total_usage.get(key, 0) + usage.get(key, 0)
-
-            drafts = [
-                EvidenceDraft(
-                    topic_id=topic.id,
-                    source_url=candidate.normalized_url or candidate.url,
-                    source_title=sanitize_source_title(
-                        candidate.title,
-                        candidate.normalized_url or candidate.url,
-                    )
-                    or "Unknown Source",
-                    claim=item.claim,
-                    quotation=item.quotation,
-                    locator=item.citation_locator,
-                    summary=item.summary,
-                    extractor_output_tokens=usage.get("output_tokens", 0),
-                    extractor_input_tokens=usage.get("input_tokens", 0),
-                    extraction_confidence=item.confidence,
-                    relevance_score=item.relevance_score,
-                    caveats=item.caveats,
-                )
-                for item in payload.evidences
-            ]
+            drafts, usage = self._extract_candidate(state, topic, candidate)
+            total_usage = accumulate_usage_totals(total_usage, usage)
             all_drafts.extend(drafts)
-            log_runtime_event(
-                self._runtime,
-                "[extractor] Extraction complete",
-                verbosity=1,
-                url=candidate.url,
-                count=len(drafts),
-                **usage,
-            )
 
-        llm_usage = {**state.get("llm_usage", {}), "extractor": total_usage}
+        llm_usage = update_stage_llm_usage(state.get("llm_usage", {}), "extractor", total_usage)
         log_runtime_event(
             self._runtime,
             "[extractor] Batch extraction finished",

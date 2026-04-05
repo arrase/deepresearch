@@ -5,7 +5,7 @@ from __future__ import annotations
 import functools
 import json
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Any, TypeVar, cast
 
 from ..observability import get_logger
@@ -30,6 +30,29 @@ def log_runtime_event(runtime: Any, message: str, *, verbosity: int = 1, **paylo
         logger.log(level, "%s | %s", message, rendered_payload)
     else:
         logger.log(level, message)
+
+
+def accumulate_usage_totals(
+    current: Mapping[str, int],
+    usage: Mapping[str, int],
+) -> dict[str, int]:
+    updated = dict(current)
+    for key, value in usage.items():
+        updated[key] = updated.get(key, 0) + value
+    return updated
+
+
+def update_stage_llm_usage(
+    existing: Mapping[str, Mapping[str, int]],
+    stage: str,
+    usage: Mapping[str, int],
+    *,
+    include_empty: bool = True,
+) -> dict[str, dict[str, int]]:
+    updated = {name: dict(values) for name, values in existing.items()}
+    if usage or include_empty:
+        updated[stage] = dict(usage)
+    return updated
 
 
 def log_node_activity(stage: str, message_template: str) -> Callable[[F], F]:

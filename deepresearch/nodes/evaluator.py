@@ -9,14 +9,14 @@ when all topics are exhausted but iteration budget remains.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 from langsmith import traceable
 
 from ..core.payloads import CoveragePayload
 from ..core.utils import compute_minimum_coverage, enrich_gaps_with_search_terms, summarize_gaps
-from ..state import ResearchState, StopReason, TopicStatus
-from .base import log_node_activity, log_runtime_event
+from ..state import ResearchState, ResearchTopic, StopReason, SynthesisBudget, TopicStatus
+from .base import log_node_activity, log_runtime_event, update_stage_llm_usage
 
 if TYPE_CHECKING:
     from ..runtime import ResearchRuntime
@@ -34,61 +34,62 @@ class EvaluatorNode:
             return False
         return state["current_iteration"] % interval == 0
 
-    def _determine_stop_reason(self, state: ResearchState) -> str | None:
-        budget = state["synthesis_budget"]
-        if budget.final_context_full:
+    def _determine_stop_reason_from_values(
+        self,
+        *,
+        plan: list[ResearchTopic],
+        synthesis_budget: SynthesisBudget,
+        current_iteration: int,
+        max_iterations: int,
+        cycles_without_new_evidence: int,
+        cycles_without_useful_sources: int,
+        consecutive_technical_failures: int,
+    ) -> str | None:
+        if synthesis_budget.final_context_full:
             return StopReason.CONTEXT_SATURATION.value
-        if state["plan"] and all(
-            topic.status in {TopicStatus.COMPLETED, TopicStatus.EXHAUSTED}
-            for topic in state["plan"]
-        ):
+        if plan and all(topic.status in {TopicStatus.COMPLETED, TopicStatus.EXHAUSTED} for topic in plan):
             return StopReason.PLAN_COMPLETED.value
-        if state["current_iteration"] >= state["max_iterations"]:
+        if current_iteration >= max_iterations:
             return StopReason.MAX_ITERATIONS_REACHED.value
         runtime = self._runtime.config.runtime
-        stuck_by_evidence = state["cycles_without_new_evidence"] >= runtime.max_cycles_without_new_evidence
-        stuck_by_sources = state["cycles_without_useful_sources"] >= runtime.max_cycles_without_useful_sources
-        stuck_by_technical = state["consecutive_technical_failures"] >= runtime.max_consecutive_technical_failures
+        stuck_by_evidence = cycles_without_new_evidence >= runtime.max_cycles_without_new_evidence
+        stuck_by_sources = cycles_without_useful_sources >= runtime.max_cycles_without_useful_sources
+        stuck_by_technical = consecutive_technical_failures >= runtime.max_consecutive_technical_failures
         if stuck_by_technical or (stuck_by_evidence and stuck_by_sources):
             return StopReason.STUCK_NO_SOURCES.value
         return None
 
-    @traceable(name="evaluator-node")
-    @log_node_activity("evaluator", "Evaluating: {query}")
-    def __call__(self, state: ResearchState) -> dict:
-        deterministic_resolved, deterministic_gaps = compute_minimum_coverage(
-            state["plan"],
-            state["curated_evidence"],
-            state["topic_attempts"],
+    def _run_semantic_evaluation(self, state: ResearchState) -> tuple[CoveragePayload | None, dict[str, int], bool]:
+        if not self._should_run_semantic_eval(state):
+            return None, {}, False
+        semantic, usage = self._runtime.llm_workers.evaluate_coverage_with_usage(
+            self._runtime.context_manager.evaluator_context(state)
+        )
+        return semantic, usage, True
+
+    def _force_semantic_evaluation(self, state: ResearchState) -> tuple[CoveragePayload, dict[str, int]]:
+        return self._runtime.llm_workers.evaluate_coverage_with_usage(
+            self._runtime.context_manager.evaluator_context(state)
         )
 
-        # Semantic evaluation: only run periodically or when we're about to stop
-        run_semantic = self._should_run_semantic_eval(state)
-        semantic: CoveragePayload | None = None
-        usage: dict[str, int] = {}
-        if run_semantic:
-            semantic, usage = self._runtime.llm_workers.evaluate_coverage_with_usage(
-                self._runtime.context_manager.evaluator_context(state)
-            )
-
+    def _update_topic_statuses(
+        self,
+        state: ResearchState,
+        deterministic_resolved: list[str],
+        semantic: CoveragePayload | None,
+    ) -> tuple[list[ResearchTopic], bool]:
         coverage = state["topic_coverage"]
-        plan = []
+        plan: list[ResearchTopic] = []
         replan_requested = False
         min_attempts = self._runtime.config.runtime.min_attempts_before_exhaustion
         active_topic_id = state.get("active_topic_id")
+        semantic_sufficient = semantic.is_sufficient if semantic else True
 
         for topic in state["plan"]:
             topic_coverage = coverage.get(topic.id)
             accepted_count = topic_coverage.accepted_evidence_count if topic_coverage else 0
             attempts = state["topic_attempts"].get(topic.id, 0)
-
-            # Completion check: deterministic resolved + (semantic confirms or no criteria)
-            semantic_sufficient = semantic.is_sufficient if semantic else True
-            completed = topic.id in deterministic_resolved and (
-                semantic_sufficient or not topic.success_criteria
-            )
-
-            # Exhaustion check: requires minimum attempts
+            completed = topic.id in deterministic_resolved and (semantic_sufficient or not topic.success_criteria)
             exhausted = (
                 topic.id == active_topic_id
                 and accepted_count == 0
@@ -105,50 +106,72 @@ class EvaluatorNode:
                 plan.append(topic.model_copy(update={"status": TopicStatus.IN_PROGRESS}))
             else:
                 plan.append(topic)
+        return plan, replan_requested
+
+    def _counter_updates(self, state: ResearchState) -> dict[str, int]:
+        return {
+            "cycles_without_new_evidence": (
+                0 if state["new_evidence_in_cycle"] > 0 else state["cycles_without_new_evidence"] + 1
+            ),
+            "cycles_without_useful_sources": (
+                0 if state["useful_source_in_cycle"] else state["cycles_without_useful_sources"] + 1
+            ),
+            "consecutive_empty_search_cycles": (
+                state["consecutive_empty_search_cycles"] + 1
+                if state.get("technical_reason") == "no_results"
+                else 0
+            ),
+            "consecutive_technical_failures": (
+                state["consecutive_technical_failures"] + 1
+                if state.get("technical_reason") in {"no_results", "no_topics", "search_error"}
+                else 0
+            ),
+        }
+
+    @traceable(name="evaluator-node")
+    @log_node_activity("evaluator", "Evaluating: {query}")
+    def __call__(self, state: ResearchState) -> dict:
+        deterministic_resolved, deterministic_gaps = compute_minimum_coverage(
+            state["plan"],
+            state["curated_evidence"],
+            state["topic_attempts"],
+        )
+
+        semantic, usage, semantic_ran = self._run_semantic_evaluation(state)
+        active_topic_id = state.get("active_topic_id")
+        plan, replan_requested = self._update_topic_statuses(state, deterministic_resolved, semantic)
 
         semantic_gaps = semantic.open_gaps if semantic else []
         open_gaps = enrich_gaps_with_search_terms([*deterministic_gaps, *semantic_gaps], plan)
-        cycles_without_new_evidence = (
-            0 if state["new_evidence_in_cycle"] > 0 else state["cycles_without_new_evidence"] + 1
-        )
-        cycles_without_useful_sources = (
-            0 if state["useful_source_in_cycle"] else state["cycles_without_useful_sources"] + 1
-        )
-        consecutive_empty_search_cycles = (
-            state["consecutive_empty_search_cycles"] + 1 if state.get("technical_reason") == "no_results" else 0
-        )
-        consecutive_technical_failures = (
-            state["consecutive_technical_failures"] + 1
-            if state.get("technical_reason") in {"no_results", "no_topics", "search_error"}
-            else 0
-        )
+        counter_updates = self._counter_updates(state)
         synthesis_budget = self._runtime.context_manager.synthesis_budget(
-            {**state, "plan": plan, "open_gaps": open_gaps}
+            {
+                **state,
+                "plan": plan,
+                "open_gaps": open_gaps,
+                "cycles_without_new_evidence": counter_updates["cycles_without_new_evidence"],
+                "cycles_without_useful_sources": counter_updates["cycles_without_useful_sources"],
+                "consecutive_empty_search_cycles": counter_updates["consecutive_empty_search_cycles"],
+                "consecutive_technical_failures": counter_updates["consecutive_technical_failures"],
+            }
         )
 
-        # Build a temporary state dict for stop-reason evaluation
-        eval_state = cast(ResearchState, {
-            **state,
-            "plan": plan,
-            "open_gaps": open_gaps,
-            "cycles_without_new_evidence": cycles_without_new_evidence,
-            "cycles_without_useful_sources": cycles_without_useful_sources,
-            "consecutive_empty_search_cycles": consecutive_empty_search_cycles,
-            "consecutive_technical_failures": consecutive_technical_failures,
-            "synthesis_budget": synthesis_budget,
-        })
-        stop_reason = self._determine_stop_reason(eval_state)
+        stop_reason = self._determine_stop_reason_from_values(
+            plan=plan,
+            synthesis_budget=synthesis_budget,
+            current_iteration=state["current_iteration"],
+            max_iterations=state["max_iterations"],
+            cycles_without_new_evidence=counter_updates["cycles_without_new_evidence"],
+            cycles_without_useful_sources=counter_updates["cycles_without_useful_sources"],
+            consecutive_technical_failures=counter_updates["consecutive_technical_failures"],
+        )
 
-        # Pre-synthesis semantic check: if we're about to stop and haven't run
-        # semantic eval yet, run it now to catch any remaining gaps
-        if stop_reason and not run_semantic:
-            semantic, usage = self._runtime.llm_workers.evaluate_coverage_with_usage(
-                self._runtime.context_manager.evaluator_context(state)
-            )
+        if stop_reason and not semantic_ran:
+            semantic, usage = self._force_semantic_evaluation(state)
+            semantic_ran = True
             semantic_gaps = semantic.open_gaps
             open_gaps = enrich_gaps_with_search_terms([*deterministic_gaps, *semantic_gaps], plan)
 
-        # If plan_completed but iterations remain, try replan instead of stopping
         if (
             stop_reason == StopReason.PLAN_COMPLETED.value
             and state["current_iteration"] < state["max_iterations"]
@@ -159,9 +182,7 @@ class EvaluatorNode:
             replan_requested = True
 
         contradictions = semantic.contradictions if semantic else []
-        llm_usage = {**state.get("llm_usage", {})}
-        if usage:
-            llm_usage["evaluator"] = usage
+        llm_usage = update_stage_llm_usage(state.get("llm_usage", {}), "evaluator", usage, include_empty=False)
 
         log_runtime_event(
             self._runtime,
@@ -170,7 +191,7 @@ class EvaluatorNode:
             active_topic_id=active_topic_id,
             stop_reason=stop_reason,
             replan_requested=replan_requested,
-            semantic_eval_ran=run_semantic or bool(stop_reason),
+            semantic_eval_ran=semantic_ran,
             **usage,
         )
         log_runtime_event(
@@ -184,10 +205,7 @@ class EvaluatorNode:
             "plan": plan,
             "open_gaps": open_gaps,
             "contradictions": contradictions,
-            "cycles_without_new_evidence": cycles_without_new_evidence,
-            "cycles_without_useful_sources": cycles_without_useful_sources,
-            "consecutive_empty_search_cycles": consecutive_empty_search_cycles,
-            "consecutive_technical_failures": consecutive_technical_failures,
+            **counter_updates,
             "synthesis_budget": synthesis_budget,
             "stop_reason": stop_reason,
             "replan_requested": False if stop_reason else replan_requested,
