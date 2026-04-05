@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DeepResearch - Auditable Research CLI</title>
+    <meta name="description" content="DeepResearch is a local-first research CLI built with LangGraph, Ollama, and Tavily. It plans, searches, extracts evidence, evaluates coverage, and ships traceable reports.">
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <header>
+        <div class="container">
+            <nav>
+                <a href="#overview" class="logo">Deep<span>Research</span></a>
+                <ul class="nav-links">
+                    <li><a href="#features">Features</a></li>
+                    <li><a href="#pipeline">Pipeline</a></li>
+                    <li><a href="#usage">Usage</a></li>
+                    <li><a href="https://github.com/arrase/deepresearch" target="_blank" rel="noreferrer"><i class="fab fa-github"></i> GitHub</a></li>
+                </ul>
+            </nav>
+        </div>
+    </header>
+
+    <section class="hero" id="overview">
+        <div class="container hero-grid">
+            <div class="hero-copy">
+                <h1>Auditable deep research for open-ended questions</h1>
+                <p>
+                    DeepResearch is a local-first CLI that plans a research path, searches the web through Tavily,
+                    extracts atomic evidence with a local Ollama model, evaluates whether coverage is strong enough,
+                    and writes a final report with traceable citations.
+                </p>
+
+                <div class="hero-buttons">
+                    <a href="#usage" class="cta-button">Get Started</a>
+                    <a href="https://github.com/arrase/deepresearch" class="secondary-button" target="_blank" rel="noreferrer">View on GitHub</a>
+                </div>
+
+                <div class="stat-strip">
+                    <div class="stat-card">
+                        <strong>6 graph stages</strong>
+                        <span>Planner, search, extraction, context curation, evaluation, synthesis.</span>
+                    </div>
+                    <div class="stat-card">
+                        <strong>Local-first runtime</strong>
+                        <span>Ollama handles reasoning locally while Tavily focuses on discovery.</span>
+                    </div>
+                    <div class="stat-card">
+                        <strong>Flexible delivery</strong>
+                        <span>Markdown, PDF, and optional Discord delivery from the same run.</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="hero-panel">
+                <div class="terminal-card">
+                    <div class="terminal-bar">
+                        <span class="terminal-dot"></span>
+                        <span class="terminal-dot"></span>
+                        <span class="terminal-dot"></span>
+                    </div>
+                    <pre><code>deepresearch "Compare web research APIs for deep analysis workflows"
+
+planner        builds subqueries and search intent
+source_manager gathers candidates with raw content
+extractor      turns passages into atomic evidence
+context_manager curates the working dossier
+evaluator      decides whether to continue
+synthesizer    writes the final report</code></pre>
+                </div>
+
+                <div class="snapshot-card">
+                    <p class="snapshot-title">What makes it auditable</p>
+                    <ul class="data-list compact-list">
+                        <li>Every final report is grounded in evidence objects, source URLs, and quotations.</li>
+                        <li>The runtime can stop early when additional cycles no longer improve coverage.</li>
+                        <li>Configuration is validated strictly instead of silently accepting unknown fields.</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="features">
+        <div class="container">
+            <h2>Key Features</h2>
+            <p class="section-intro">
+                The site mirrors the same card-based structure used in ollama-agent/docs, but the content below is tied to
+                DeepResearch itself: the LangGraph loop, the runtime controls, and the final report behavior exposed by the CLI.
+            </p>
+
+            <div class="feature-list">
+                <article class="feature-item">
+                    <div class="feature-header">
+                        <div class="feature-icon"><i class="fas fa-diagram-project"></i></div>
+                        <div>
+                            <h3>StateGraph Research Loop</h3>
+                            <p class="feature-description">A compiled LangGraph pipeline orchestrates the full research process from planning to synthesis.</p>
+                        </div>
+                    </div>
+                    <div class="feature-body">
+                        <div class="usage-box">
+                            <p class="usage-title">Graph Nodes</p>
+                            <table class="cmd-table">
+                                <tr><td>planner</td><td>Builds subqueries and search intent</td></tr>
+                                <tr><td>source_manager</td><td>Fetches and filters candidate sources</td></tr>
+                                <tr><td>extractor</td><td>Converts passages into atomic evidence</td></tr>
+                                <tr><td>context_manager</td><td>Curates the working dossier</td></tr>
+                                <tr><td>evaluator</td><td>Decides whether to continue, replan, or stop</td></tr>
+                                <tr><td>synthesizer</td><td>Writes the final answer and full report</td></tr>
+                            </table>
+                        </div>
+                    </div>
+                </article>
+
+                <article class="feature-item">
+                    <div class="feature-header">
+                        <div class="feature-icon"><i class="fas fa-file-signature"></i></div>
+                        <div>
+                            <h3>Traceable Evidence</h3>
+                            <p class="feature-description">The project is built for auditable outputs instead of opaque summaries.</p>
+                        </div>
+                    </div>
+                    <div class="feature-body">
+                        <div class="usage-box">
+                            <p class="usage-title">Final Report Guarantees</p>
+                            <table class="cmd-table">
+                                <tr><td>Evidence</td><td>Atomic evidence units are attached to sources</td></tr>
+                                <tr><td>Sources</td><td>URLs and quotations remain available for inspection</td></tr>
+                                <tr><td>Executive answer</td><td>The CLI prints the executive summary to standard output</td></tr>
+                            </table>
+                        </div>
+                        <div class="feature-code"># Default behavior
+If you do not pass --markdown or --pdf,
+DeepResearch writes report.md in the current directory.</div>
+                    </div>
+                </article>
+
+                <article class="feature-item">
+                    <div class="feature-header">
+                        <div class="feature-icon"><i class="fas fa-microchip"></i></div>
+                        <div>
+                            <h3>Local Ollama Runtime</h3>
+                            <p class="feature-description">Models run through Ollama locally, with CLI overrides for model name and context size.</p>
+                        </div>
+                    </div>
+                    <div class="feature-body">
+                        <div class="usage-box">
+                            <p class="usage-title">CLI Overrides</p>
+                            <table class="cmd-table">
+                                <tr><td>--model NAME</td><td>Switch the active Ollama model for one run</td></tr>
+                                <tr><td>--num-ctx N</td><td>Override the model context window</td></tr>
+                                <tr><td>--max-iterations N</td><td>Set the maximum research depth</td></tr>
+                                <tr><td>--verbosity 0-3</td><td>Control local progress logging detail</td></tr>
+                            </table>
+                        </div>
+                    </div>
+                </article>
+
+                <article class="feature-item">
+                    <div class="feature-header">
+                        <div class="feature-icon"><i class="fas fa-globe"></i></div>
+                        <div>
+                            <h3>Tavily Source Discovery</h3>
+                            <p class="feature-description">Search is delegated to Tavily, then narrowed down to sources with usable raw content.</p>
+                        </div>
+                    </div>
+                    <div class="feature-body">
+                        <div class="usage-box">
+                            <p class="usage-title">Search Controls</p>
+                            <table class="cmd-table">
+                                <tr><td>api_key</td><td>Tavily API key in the user config</td></tr>
+                                <tr><td>results_per_query</td><td>Controls how many sources are fetched per query</td></tr>
+                                <tr><td>max_raw_content_chars</td><td>Caps extracted raw content per candidate</td></tr>
+                                <tr><td>min_source_chars</td><td>Filters unusably short pages</td></tr>
+                            </table>
+                        </div>
+                    </div>
+                </article>
+
+                <article class="feature-item">
+                    <div class="feature-header">
+                        <div class="feature-icon"><i class="fas fa-sliders"></i></div>
+                        <div>
+                            <h3>Strict Config Bootstrap</h3>
+                            <p class="feature-description">The runtime bootstraps an editable config tree under the user home directory on first load.</p>
+                        </div>
+                    </div>
+                    <div class="feature-body">
+                        <div class="usage-box">
+                            <p class="usage-title">Materialized Paths</p>
+                            <table class="cmd-table">
+                                <tr><td>~/.deepresearch/config/config.toml</td><td>Main user-editable runtime config</td></tr>
+                                <tr><td>~/.deepresearch/config/prompts/</td><td>Editable prompt templates copied from package resources</td></tr>
+                            </table>
+                        </div>
+                        <div class="feature-code"># Validation model
+Unknown sections and unsupported fields are rejected
+instead of being silently ignored.</div>
+                    </div>
+                </article>
+
+                <article class="feature-item">
+                    <div class="feature-header">
+                        <div class="feature-icon"><i class="fas fa-share-nodes"></i></div>
+                        <div>
+                            <h3>Multiple Delivery Paths</h3>
+                            <p class="feature-description">The same run can write files locally or optionally deliver the report through Discord.</p>
+                        </div>
+                    </div>
+                    <div class="feature-body">
+                        <div class="usage-box">
+                            <p class="usage-title">Output Modes</p>
+                            <table class="cmd-table">
+                                <tr><td>--markdown PATH</td><td>Write the final report as Markdown</td></tr>
+                                <tr><td>--pdf PATH</td><td>Render a PDF through WeasyPrint</td></tr>
+                                <tr><td>--discord</td><td>Send the report to the configured Discord user</td></tr>
+                            </table>
+                        </div>
+                    </div>
+                </article>
+            </div>
+        </div>
+    </section>
+
+    <section id="pipeline">
+        <div class="container">
+            <h2>Research Pipeline</h2>
+            <p class="section-intro">
+                DeepResearch does not run a single search-and-summarize pass. It cycles through evidence collection,
+                context curation, and evaluation until the runtime believes another iteration would no longer add useful information.
+            </p>
+
+            <div class="process-grid">
+                <article class="process-step">
+                    <span class="step-index">01</span>
+                    <h3>Plan</h3>
+                    <p>The planner converts the user question into subqueries and search intents.</p>
+                </article>
+                <article class="process-step">
+                    <span class="step-index">02</span>
+                    <h3>Discover</h3>
+                    <p>The source manager searches Tavily and selects candidates with enough raw content to inspect.</p>
+                </article>
+                <article class="process-step">
+                    <span class="step-index">03</span>
+                    <h3>Extract</h3>
+                    <p>The extractor turns passages into atomic evidence that can be reused during synthesis.</p>
+                </article>
+                <article class="process-step">
+                    <span class="step-index">04</span>
+                    <h3>Curate</h3>
+                    <p>The context manager updates the working dossier and keeps the useful context available for later steps.</p>
+                </article>
+                <article class="process-step">
+                    <span class="step-index">05</span>
+                    <h3>Evaluate</h3>
+                    <p>The evaluator decides whether the run is sufficient, exhausted, or needs dynamic replanning.</p>
+                </article>
+                <article class="process-step">
+                    <span class="step-index">06</span>
+                    <h3>Synthesize</h3>
+                    <p>The synthesizer writes the executive answer and the final report once the runtime stops.</p>
+                </article>
+            </div>
+
+            <div class="split-grid">
+                <div class="command-group">
+                    <p class="command-title">Stop Conditions</p>
+                    <ul class="data-list">
+                        <li><strong>sufficient_information</strong> when the evaluator believes the dossier is already good enough.</li>
+                        <li><strong>final_context_full</strong> when the final context budget has effectively been consumed.</li>
+                        <li><strong>research_exhausted</strong> when further cycles stop producing useful sources or evidence.</li>
+                        <li><strong>max_iterations_reached</strong> when the run reaches the configured hard cap.</li>
+                    </ul>
+                </div>
+
+                <div class="command-group">
+                    <p class="command-title">Operational Surface</p>
+                    <ul class="data-list">
+                        <li>Runtime safeguards include search batch size, retry attempts, and consecutive failure limits.</li>
+                        <li>LangSmith tracing can be enabled without changing the CLI surface.</li>
+                        <li>Test coverage in the repository targets graph flow, config loading, prompts, observability, Discord delivery, and deterministic behavior.</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="configuration">
+        <div class="container">
+            <h2>Configuration Surface</h2>
+
+            <div class="split-grid">
+                <div class="command-group">
+                    <p class="command-title">Default Runtime Config</p>
+                    <pre><code>[model]
+model_name = "qwen3.5:9b"
+base_url = "http://127.0.0.1:11434"
+num_ctx = 100000
+num_predict = 8192
+
+[search]
+results_per_query = 5
+max_raw_content_chars = 24000
+min_source_chars = 300
+
+[runtime]
+max_iterations = 8
+search_batch_size = 3
+allow_dynamic_replan = true
+verbosity = 0</code></pre>
+                </div>
+
+                <div class="command-group">
+                    <p class="command-title">Optional Services</p>
+                    <pre><code>[langsmith]
+enabled = false
+tracing = true
+project = "DeepResearch"
+
+[discord]
+token = "YOUR_BOT_TOKEN"
+user_id = "YOUR_DISCORD_USER_ID"
+output = "pdf"</code></pre>
+                    <p class="small-note">PDF output uses WeasyPrint, so minimal Linux systems may need standard system libraries in addition to Python packages.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="usage">
+        <div class="container">
+            <h2>Getting Started</h2>
+
+            <div class="command-group">
+                <p class="command-title">Requirements</p>
+                <p>DeepResearch expects Python 3.11 or newer, Ollama running locally, at least one local model pulled, and a Tavily API key configured in the editable runtime config.</p>
+                <pre><code>ollama pull qwen3.5:9b
+ollama serve</code></pre>
+            </div>
+
+            <div class="command-group">
+                <p class="command-title">Install With pipx</p>
+                <pre><code>pipx install git+https://github.com/arrase/deepresearch.git</code></pre>
+            </div>
+
+            <div class="command-group">
+                <p class="command-title">Source Install</p>
+                <pre><code>git clone https://github.com/arrase/deepresearch.git
+cd deepresearch
+python -m venv .venv
+source .venv/bin/activate
+pip install -e .</code></pre>
+            </div>
+
+            <div class="command-group">
+                <p class="command-title">First Config Bootstrap</p>
+                <p>The config tree is created on first load. Before a real run, set a Tavily API key in the generated config file.</p>
+                <pre><code>[search]
+api_key = "YOUR_TAVILY_API_KEY"
+results_per_query = 5
+max_raw_content_chars = 24000
+min_source_chars = 300</code></pre>
+            </div>
+
+            <div class="command-group">
+                <p class="command-title">First Successful Run</p>
+                <pre><code>deepresearch "Compare web research APIs for deep analysis workflows"</code></pre>
+            </div>
+
+            <div class="command-group">
+                <p class="command-title">Common Examples</p>
+                <pre><code>deepresearch "Assess the current commercial readiness of fusion startups" --markdown outputs/fusion.md
+
+deepresearch "Compare web research APIs for deep analysis workflows" --pdf outputs/research-apis.pdf
+
+deepresearch "Track the strongest open-source coding models this quarter" --model llama3.1:8b --num-ctx 65536
+
+deepresearch "Evaluate the current state of multimodal local models" --verbosity 2
+
+deepresearch "Research question" --config-root .deepresearch-config</code></pre>
+            </div>
+        </div>
+    </section>
+
+    <footer>
+        <div class="container">
+            <p>Built for local research workflows that need evidence, iteration, and a final answer you can inspect.</p>
+            <p>Powered by <a href="https://langchain-ai.github.io/langgraph/" target="_blank" rel="noreferrer">LangGraph</a> · <a href="https://ollama.com" target="_blank" rel="noreferrer">Ollama</a> · <a href="https://tavily.com" target="_blank" rel="noreferrer">Tavily</a></p>
+            <p><a href="https://github.com/arrase/deepresearch" target="_blank" rel="noreferrer">View Source on GitHub</a></p>
+        </div>
+    </footer>
+</body>
+</html>
