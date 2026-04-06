@@ -241,6 +241,7 @@ def cli() -> int:
                 if not success:
                     logger.error("Failed to send report to Discord. Check your configuration.")
 
+            print(final_report.executive_answer)
             return 0
     except KeyboardInterrupt:
         _print_user_error(
