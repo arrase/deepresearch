@@ -14,7 +14,6 @@ def test_build_initial_state_has_required_fields() -> None:
     assert state["llm_usage"] == {}
     assert isinstance(state["synthesis_budget"], SynthesisBudget)
     assert state["synthesis_budget"].final_context_full is False
-    assert state["topic_briefs"] == {}
     assert state["stop_reason"] is None
     assert state["technical_reason"] is None
     assert state["cycles_without_new_evidence"] == 0

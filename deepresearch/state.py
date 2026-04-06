@@ -243,15 +243,6 @@ class ReportSection(BaseModel):
     topic_ids: list[str] = Field(default_factory=list)
 
 
-class TopicBrief(BaseModel):
-    topic_id: str
-    question: str
-    markdown_brief: str
-    evidence_ids: list[str] = Field(default_factory=list)
-    source_urls: list[str] = Field(default_factory=list)
-    generated_at: str = Field(default_factory=utc_now_iso)
-
-
 class FinalReport(BaseModel):
     query: str
     executive_answer: str
@@ -310,7 +301,6 @@ class ResearchState(TypedDict):
     technical_reason: str | None
     replan_requested: bool
     working_dossier: WorkingDossier
-    topic_briefs: dict[str, TopicBrief]
     llm_usage: dict[str, dict[str, int]]
     final_report: FinalReport | None
 
@@ -352,7 +342,6 @@ def build_initial_state(query: str, *, max_iterations: int) -> ResearchState:
         "technical_reason": None,
         "replan_requested": False,
         "working_dossier": WorkingDossier(),
-        "topic_briefs": {},
         "llm_usage": {},
         "final_report": None,
     }

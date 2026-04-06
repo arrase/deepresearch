@@ -115,12 +115,6 @@ class ModelConfig(BaseModel):
         le=1.0,
         description="Sampling temperature for final report synthesis.",
     )
-    temperature_topic_synthesizer: float = Field(
-        default=0.1,
-        ge=0.0,
-        le=1.0,
-        description="Sampling temperature for topic-brief synthesis.",
-    )
     num_ctx: int = Field(default=100000, ge=4096, description="Maximum context window passed to Ollama.")
     num_predict: int = Field(default=8192, ge=64, description="Maximum number of tokens generated per LLM call.")
     timeout_seconds: int = Field(default=120, ge=5, description="Per-request timeout for Ollama calls.")
@@ -165,18 +159,6 @@ class ReporterConfig(BaseModel):
         default=512,
         ge=0,
         description="Extra prompt headroom kept free before synthesis.",
-    )
-    topic_brief_budget_ratio: float = Field(
-        default=0.45,
-        ge=0.1,
-        le=0.8,
-        description="Share of the synthesis prompt budget reserved for topic briefs.",
-    )
-    final_report_target_words: int = Field(
-        default=1800,
-        ge=400,
-        le=5000,
-        description="Approximate target length for rich final reports.",
     )
 
 
@@ -271,29 +253,6 @@ class RuntimeConfig(BaseModel):
         le=5,
         description="How many times to retry recoverable LLM parsing failures.",
     )
-    min_topic_evidence_target: int = Field(
-        default=2,
-        ge=1,
-        le=6,
-        description="Minimum evidence target applied after planner normalization.",
-    )
-    max_topic_evidence_target: int = Field(
-        default=4,
-        ge=1,
-        le=8,
-        description="Upper bound for dynamically normalized topic evidence targets.",
-    )
-    extraction_max_chars_per_pass: int = Field(
-        default=4000,
-        ge=1000,
-        description="Maximum source characters sent to one extraction pass.",
-    )
-    max_extraction_passes_per_source: int = Field(
-        default=3,
-        ge=1,
-        le=6,
-        description="How many extraction passes can be run for one source.",
-    )
     language: str = Field(default="English", description="Language used for prompts and the final report.")
 
 
@@ -360,7 +319,8 @@ class ResearchConfig(BaseModel):
         resolved_root = resolve_config_root(config_root)
         config_file_path = resolved_root / DEFAULT_CONFIG_FILENAME
 
-        bootstrap_config_root(resolved_root)
+        if not config_file_path.exists():
+            bootstrap_config_root(resolved_root)
 
         raw_payload = tomllib.loads(config_file_path.read_text(encoding="utf-8"))
         config = cls.model_validate(raw_payload)

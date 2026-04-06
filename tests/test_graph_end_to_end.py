@@ -34,7 +34,6 @@ def test_graph_reaches_plan_completed(fake_runtime) -> None:
     assert result["final_report"] is not None
     assert result["stop_reason"] == StopReason.PLAN_COMPLETED
     assert result["curated_evidence"]
-    assert result["topic_briefs"]["topic_demo"].markdown_brief
     assert result["topic_coverage"]["topic_demo"].accepted_evidence_count >= 1
     assert result["plan"][0].status == TopicStatus.COMPLETED
 

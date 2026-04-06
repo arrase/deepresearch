@@ -50,8 +50,8 @@ def test_cli_reports_unknown_config_field_and_recovery_hint(tmp_path, monkeypatc
     config = ResearchConfig.load(config_root=config_root)
     config.config_file_path.write_text(
         config.config_file_path.read_text(encoding="utf-8").replace(
-            'language = "English"',
-            'language = "English"\nunknown_runtime_field = 99',
+            'language = "English" # Language used for prompts and the final report.',
+            'language = "English" # Language used for prompts and the final report.\nunknown_runtime_field = 99',
         ),
         encoding="utf-8",
     )

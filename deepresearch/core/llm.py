@@ -15,15 +15,9 @@ from pydantic import BaseModel, ValidationError
 from ..config import ResearchConfig
 from ..context_manager import NodeContext
 from ..prompting import PromptTemplateLoader
-from ..state import CuratedEvidence, FinalReport, ResearchTopic, TopicBrief
+from ..state import FinalReport
 from .payloads import CoveragePayload, EvidencePayload, PlannerPayload
-from .utils import (
-    build_report_sources,
-    extract_markdown_bullets,
-    extract_markdown_section,
-    markdown_to_report_sections,
-    strip_markdown_fence,
-)
+from .utils import build_report_sources
 
 _JSON_FALLBACK_INSTRUCTION = "Return valid JSON only."
 
@@ -305,66 +299,6 @@ class LLMWorkers:
         except (json.JSONDecodeError, ValidationError, ValueError):
             return CoveragePayload(), {}
 
-    def synthesize_topic_brief(self, context: NodeContext, query: str, topic: ResearchTopic) -> TopicBrief:
-        brief, _ = self.synthesize_topic_brief_with_usage(context, query, topic)
-        return brief
-
-    @traceable(name="topic-synthesizer-llm-with-usage")
-    def synthesize_topic_brief_with_usage(
-        self,
-        context: NodeContext,
-        query: str,
-        topic: ResearchTopic,
-    ) -> tuple[TopicBrief, dict[str, int]]:
-        vars = context.model_dump()
-        _domain = self._extract_domain_label
-
-        def _render_topic_sources(item: CuratedEvidence) -> str:
-            return "; ".join(f"{source.title} @ {_domain(source.url)}" for source in item.sources[:3]) or "unknown"
-
-        vars.update(
-            {
-                "query": query,
-                "topic_question": topic.question,
-                "topic_id": topic.id,
-                "evidentiary": "\n".join(
-                    (
-                        f"- {e.evidence_id} | claim={e.canonical_claim} | "
-                        f"summary={e.summary} | confidence={e.confidence.value} | "
-                        f"quotes={'; '.join(e.support_quotes[:2]) or 'none'} | "
-                        f"sources={_render_topic_sources(e)}"
-                    )
-                    for e in context.evidentiary
-                ),
-            }
-        )
-        prompt = self._prompt_loader.render(
-            "topic_synthesizer",
-            {
-                **vars,
-                "language": self._config.runtime.language,
-                "target_words": min(700, max(250, self._config.reporter.final_report_target_words // 3)),
-            },
-        )
-        llm = self._llm(temperature=self._config.model.temperature_topic_synthesizer, json_format=False)
-        usage: dict[str, int] = {}
-        try:
-            invocation = self._invoke(llm, [SystemMessage(content=prompt.system), HumanMessage(content=prompt.human)])
-            markdown = strip_markdown_fence(invocation.content)
-            usage = invocation.usage
-        except (ValueError, KeyError, OSError) as error:
-            markdown = f"### Topic\n{topic.question}\n\n### Answer\nUnable to synthesize topic brief: {error}"
-        return (
-            TopicBrief(
-                topic_id=topic.id,
-                question=topic.question,
-                markdown_brief=markdown,
-                evidence_ids=[item.evidence_id for item in context.evidentiary],
-                source_urls=[source.url for item in context.evidentiary for source in item.sources],
-            ),
-            usage,
-        )
-
     def synthesize_report(self, context: NodeContext, query: str) -> FinalReport:
         report, _ = self.synthesize_report_with_usage(context, query)
         return report
@@ -373,20 +307,16 @@ class LLMWorkers:
     def synthesize_report_with_usage(self, context: NodeContext, query: str) -> tuple[FinalReport, dict[str, int]]:
         vars = context.model_dump()
         _domain = self._extract_domain_label
-
-        def _render_report_sources(item: CuratedEvidence) -> str:
-            return "; ".join(f"{source.title} @ {_domain(source.url)}" for source in item.sources[:2]) or "unknown"
-
         vars.update(
             {
                 "query": query,
-                "topic_briefs_context": context.topic_briefs_context,
-                "target_words": self._config.reporter.final_report_target_words,
                 "evidentiary": "\n".join(
                     (
                         f"- {e.evidence_id} | topic={e.topic_id} | claim={e.canonical_claim} | "
                         f"summary={e.summary} | confidence={e.confidence.value} | "
-                        f"sources={_render_report_sources(e)}"
+                        f"sources={'; '.join(
+                            f'{source.title} @ {_domain(source.url)}' for source in e.sources[:2]
+                        ) or 'unknown'}"
                     )
                     for e in context.evidentiary
                 ),
@@ -412,59 +342,19 @@ class LLMWorkers:
             raw_text = f"# Research Report\n\nError generating report: {e}"
 
         cited_sources = build_report_sources(context.evidentiary)
-        md = strip_markdown_fence(raw_text)
-        parsed_sections = markdown_to_report_sections(md)
+        # Clean markdown wrappers
+        md = raw_text.strip()
+        if md.startswith("```"):
+            md = re.sub(r"^```(?:markdown)?\n", "", md)
+            md = re.sub(r"\n```$", "", md)
 
         if cited_sources:
             md += "\n\n## Referenced Sources\n\n"
             for i, s in enumerate(cited_sources, 1):
                 md += f"{i}. [{s.title}]({s.url}) (Evidence: {', '.join(s.evidence_ids)})\n"
 
-        def _first_section(*headings: str) -> str:
-            for heading in headings:
-                section = extract_markdown_section(md, heading)
-                if section:
-                    return section
-            return ""
-
-        def _first_bullets(*headings: str) -> list[str]:
-            for heading in headings:
-                bullets = extract_markdown_bullets(md, heading)
-                if bullets:
-                    return bullets
-            return []
-
-        def _bullets_from_body(body: str) -> list[str]:
-            bullets: list[str] = []
-            for line in body.splitlines():
-                stripped = line.strip()
-                if stripped.startswith(("- ", "* ")):
-                    bullets.append(stripped[2:].strip())
-            return bullets
-
-        executive_answer = _first_section("Executive Answer", "Respuesta Ejecutiva")
-        if not executive_answer and parsed_sections:
-            executive_answer = parsed_sections[0].body
-        executive_answer = executive_answer or "See report."
-
-        key_findings = _first_bullets("Key Findings", "Hallazgos Clave")
-        if not key_findings and len(parsed_sections) >= 2:
-            key_findings = _bullets_from_body(parsed_sections[1].body)
-
-        limitations = _first_bullets(
-            "Limitations And Open Gaps",
-            "Limitaciones Y Brechas Abiertas",
-        )
-        if not limitations and parsed_sections:
-            limitations = _bullets_from_body(parsed_sections[-1].body)
         return FinalReport(
-            query=query,
-            executive_answer=executive_answer,
-            key_findings=key_findings,
-            reservations=limitations,
-            open_gaps=limitations,
-            sections=parsed_sections,
-            cited_sources=cited_sources,
-            evidence_ids=[e.evidence_id for e in context.evidentiary],
-            markdown_report=md,
+            query=query, executive_answer="See report.",
+            cited_sources=cited_sources, evidence_ids=[e.evidence_id for e in context.evidentiary],
+            markdown_report=md
         ), usage

@@ -10,7 +10,7 @@ if TYPE_CHECKING:
     from .config import ResearchConfig
     from .context_manager import ContextManager, NodeContext
     from .core.payloads import CoveragePayload, EvidencePayload, PlannerPayload
-    from .state import FinalReport, ResearchTopic, SearchCandidate, TopicBrief
+    from .state import FinalReport, SearchCandidate
 
 
 class SearchClientLike(Protocol):
@@ -29,20 +29,6 @@ class LLMWorkersLike(Protocol):
     def evaluate_coverage(self, context: NodeContext) -> CoveragePayload: ...
 
     def evaluate_coverage_with_usage(self, context: NodeContext) -> tuple[CoveragePayload, dict[str, int]]: ...
-
-    def synthesize_topic_brief(
-        self,
-        context: NodeContext,
-        query: str,
-        topic: ResearchTopic,
-    ) -> TopicBrief: ...
-
-    def synthesize_topic_brief_with_usage(
-        self,
-        context: NodeContext,
-        query: str,
-        topic: ResearchTopic,
-    ) -> tuple[TopicBrief, dict[str, int]]: ...
 
     def synthesize_report(self, context: NodeContext, query: str) -> FinalReport: ...
 

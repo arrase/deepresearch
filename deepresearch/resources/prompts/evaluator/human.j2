@@ -27,8 +27,8 @@ Decide which topic ids are sufficiently covered, what contradictions exist, and 
 
 Rules:
 - Interpret `resolved_subquery_ids` as resolved topic ids kept under a compatibility field name.
-- Set `is_sufficient` to true only when every topic has direct, concrete support and no major facet is still thinly covered.
-- Keep `is_sufficient` false if a major facet has zero evidence, only one weak/vague claim, or lacks source diversity for a comparative/broad topic.
+- Set `is_sufficient` to true when every topic with accepted evidence has at least one credible item that directly addresses its question. Do not require exhaustive multi-source corroboration.
+- Keep `is_sufficient` false only if a major facet of the research question has zero evidence or only vague/tangential support.
 - Only emit contradictions when two supported statements materially conflict.
 - Gap descriptions must be specific and actionable.
 - Suggested queries must be short search phrases.

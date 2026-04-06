@@ -6,7 +6,6 @@ from deepresearch.state import (
     Gap,
     GapSeverity,
     ResearchTopic,
-    TopicBrief,
     TopicCoverage,
     TopicStatus,
     build_initial_state,
@@ -120,23 +119,10 @@ def test_synthesizer_context_includes_budget_mapping(research_config) -> None:
         )
     ]
     state["synthesis_budget"] = manager.synthesis_budget(state)
-    state["topic_briefs"] = {
-        "topic_fusion": TopicBrief(
-            topic_id="topic_fusion",
-            question="What is the commercialization status of fusion energy?",
-            markdown_brief=(
-                "### Topic\nWhat is the commercialization status of fusion energy?\n\n"
-                "### Answer\nMost efforts remain pre-scale.\n\n"
-                "### Evidence Highlights\n- Demonstration-stage programs dominate.\n\n"
-                "### Uncertainty And Gaps\n- Timelines remain uncertain."
-            ),
-        )
-    }
 
     context = manager.synthesizer_context(state)
 
     assert context.query == state["query"]
     assert context.evidentiary[0].evidence_id == "evidence_fusion"
-    assert "Most efforts remain pre-scale." in context.topic_briefs_context
     assert state["synthesis_budget"].available_prompt_tokens > 0
     assert state["synthesis_budget"].final_context_full is False

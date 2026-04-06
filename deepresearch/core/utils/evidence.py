@@ -203,17 +203,13 @@ def update_working_dossier(
     merged = dossier.model_copy(deep=True)
     for item in evidence:
         current = merged.topic_summaries.get(item.topic_id, "")
-        source_titles = ", ".join(source.title for source in item.sources[:2]) or "Unknown Source"
-        line = f"- {item.canonical_claim} [confidence={item.confidence.value}; sources={source_titles}]"
-        quote_line = f'  Quote: "{item.support_quotes[0]}"' if item.support_quotes else ""
-        merged.topic_summaries[item.topic_id] = "\n".join(
-            part for part in [current, line, quote_line] if part
-        ).strip()
+        line = f"- {item.canonical_claim}"
+        merged.topic_summaries[item.topic_id] = "\n".join(part for part in [current, line] if part).strip()
         point = f"{item.topic_id}: {item.summary}"
         if point not in merged.key_points:
             merged.key_points.append(point)
         if item.sources:
-            merged.source_summaries[item.sources[0].url] = f"{item.summary} | claim={item.canonical_claim}"
+            merged.source_summaries[item.sources[0].url] = item.summary
     return merged
 
 
@@ -247,20 +243,10 @@ def compute_topic_coverages(
         domains = {extract_domain(source.url) for item in topic_evidence for source in item.sources}
         accepted_count = len(topic_evidence)
         attempts = topic_attempts.get(topic.id, 0)
-        required_domains = 2 if topic.evidence_target >= 3 else 1
-        domain_gap = max(0, required_domains - len(domains))
-        resolved = (
-            accepted_count >= topic.evidence_target
-            and len(domains) >= required_domains
-            and topic.status == TopicStatus.COMPLETED
-        )
+        resolved = accepted_count >= topic.evidence_target and topic.status == TopicStatus.COMPLETED
         exhausted = topic.status == TopicStatus.EXHAUSTED
         gap_count = max(0, topic.evidence_target - accepted_count)
-        pending_gap_text: list[str] = []
-        if gap_count > 0:
-            pending_gap_text.append(f"Need {gap_count} more evidence item(s).")
-        if domain_gap > 0:
-            pending_gap_text.append(f"Need {domain_gap} more distinct source domain(s).")
+        pending_gap_text = [] if gap_count == 0 else [f"Need {gap_count} more evidence item(s)."]
         coverage_map[topic.id] = TopicCoverage(
             topic_id=topic.id,
             accepted_evidence_count=accepted_count,
@@ -269,7 +255,7 @@ def compute_topic_coverages(
             empty_attempts=max(0, attempts - accepted_count),
             resolved=resolved,
             exhausted=exhausted,
-            rationale="coverage acceptable" if not pending_gap_text else "coverage incomplete",
+            rationale="coverage acceptable" if gap_count == 0 else "coverage incomplete",
             pending_gaps=pending_gap_text,
         )
     return coverage_map
@@ -285,27 +271,15 @@ def compute_minimum_coverage(
     gaps: list[Gap] = []
     for topic in topics:
         coverage = coverage_map[topic.id]
-        required_domains = 2 if topic.evidence_target >= 3 else 1
-        if coverage.accepted_evidence_count >= topic.evidence_target and coverage.unique_domains >= required_domains:
+        if coverage.accepted_evidence_count >= topic.evidence_target:
             continue
         missing = topic.evidence_target - coverage.accepted_evidence_count
-        if missing > 0:
-            gaps.append(
-                Gap(
-                    topic_id=topic.id,
-                    description=f"Need {missing} more evidence item(s).",
-                    severity=GapSeverity.MEDIUM,
-                    suggested_queries=list(topic.search_terms[:3]) or [topic.question],
-                )
+        gaps.append(
+            Gap(
+                topic_id=topic.id,
+                description=f"Need {missing} more evidence item(s).",
+                severity=GapSeverity.MEDIUM,
+                suggested_queries=list(topic.search_terms[:3]) or [topic.question],
             )
-        domain_gap = required_domains - coverage.unique_domains
-        if domain_gap > 0:
-            gaps.append(
-                Gap(
-                    topic_id=topic.id,
-                    description=f"Need {domain_gap} more distinct source domain(s).",
-                    severity=GapSeverity.MEDIUM,
-                    suggested_queries=list(topic.search_terms[:3]) or [topic.question],
-                )
-            )
+        )
     return resolved, gaps

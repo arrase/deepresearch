@@ -20,12 +20,6 @@ from .evidence import (
     total_evidence_tokens,
     update_working_dossier,
 )
-from .markdown import (
-    extract_markdown_bullets,
-    extract_markdown_section,
-    markdown_to_report_sections,
-    strip_markdown_fence,
-)
 from .ranking import (
     build_search_query,
     choose_active_topic,
@@ -63,11 +57,8 @@ __all__ = [
     "deduplicate_candidates",
     "enrich_gaps_with_search_terms",
     "estimate_tokens",
-    "extract_markdown_bullets",
-    "extract_markdown_section",
     "extract_domain",
     "is_source_noise_line",
-    "markdown_to_report_sections",
     "numeric_tokens",
     "prune_queue_by_domain",
     "rank_topics_for_source",
@@ -81,7 +72,6 @@ __all__ = [
     "split_source_content",
     "significant_tokens",
     "split_text",
-    "strip_markdown_fence",
     "summarize_evidence",
     "summarize_gaps",
     "summarize_search_candidates",

@@ -9,7 +9,6 @@ from .extractor import ExtractorNode
 from .planner import PlannerNode
 from .source_manager import SourceManagerNode
 from .synthesizer import SynthesizerNode
-from .topic_synthesizer import TopicSynthesizerNode
 
 __all__ = [
     "ContextManagerNode",
@@ -19,7 +18,6 @@ __all__ = [
     "ResearchNodes",
     "SourceManagerNode",
     "SynthesizerNode",
-    "TopicSynthesizerNode",
 ]
 
 
@@ -32,5 +30,4 @@ class ResearchNodes:
         self.extractor = ExtractorNode(runtime)
         self.context_manager = ContextManagerNode(runtime)
         self.evaluator = EvaluatorNode(runtime)
-        self.topic_synthesizer = TopicSynthesizerNode(runtime)
         self.synthesizer = SynthesizerNode(runtime)

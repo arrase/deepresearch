@@ -5,7 +5,6 @@ temperature_planner = 0.2 # Sampling temperature for planning.
 temperature_extractor = 0.0 # Sampling temperature for evidence extraction.
 temperature_evaluator = 0.0 # Sampling temperature for coverage evaluation.
 temperature_synthesizer = 0.1 # Sampling temperature for final report synthesis.
-temperature_topic_synthesizer = 0.1 # Sampling temperature for topic-brief synthesis.
 num_ctx = 100000 # Maximum context window passed to Ollama.
 num_predict = 8192 # Maximum tokens generated per LLM call.
 timeout_seconds = 120 # Per-request timeout for Ollama calls.
@@ -19,8 +18,6 @@ min_source_chars = 300 # Minimum source content length required before extractio
 [reporter]
 output_reserve_ratio = 0.20 # Fraction of the context window reserved for the final answer.
 prompt_margin_tokens = 512 # Extra prompt headroom kept free before synthesis.
-topic_brief_budget_ratio = 0.45 # Share of the synthesis prompt budget reserved for topic briefs.
-final_report_target_words = 1800 # Approximate target length for rich final reports.
 
 [dedup]
 lexical_fingerprint = true # Enable lexical fingerprint checks before keeping near-duplicate evidence.
@@ -44,10 +41,6 @@ semantic_eval_interval = 0 # Run evaluator every N cycles even without strong ev
 allow_dynamic_replan = true # Allow the planner to revise the topic plan during the run.
 verbosity = 0 # CLI log verbosity from quiet to detailed diagnostics.
 llm_retry_attempts = 2 # How many times to retry recoverable LLM parsing failures.
-min_topic_evidence_target = 2 # Minimum evidence target applied after planner normalization.
-max_topic_evidence_target = 4 # Upper bound for dynamically normalized topic evidence targets.
-extraction_max_chars_per_pass = 4000 # Maximum source characters sent to one extraction pass.
-max_extraction_passes_per_source = 3 # How many extraction passes can be run for one source.
 language = "English" # Language used for the final report.
 
 [langsmith]
