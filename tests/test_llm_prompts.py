@@ -82,11 +82,14 @@ def test_synthesizer_prompt_avoids_fake_inline_citations(tmp_path) -> None:
             "source_balance_summary": "- Unique evidence domains: 2",
             "open_gaps": "- None",
             "dossier_context": "topic_1 | What is Tavily?\nA web research API.",
+            "topic_briefs_context": "## What is Tavily?\n### Answer\nIt is a web research API.",
             "evidentiary": "- evidence_1 | topic=topic_1 | claim=Tavily provides web search results with raw content.",
             "language": "English",
+            "target_words": 1800,
             "format_instructions": "",
         },
     )
 
     assert "Do not fabricate inline citations" in rendered.human
     assert "runtime will append the final referenced-sources section separately" in rendered.human
+    assert "Topic Briefs" in rendered.human

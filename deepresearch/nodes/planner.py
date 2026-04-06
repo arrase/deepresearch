@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 from langsmith import traceable
 
 from ..core.utils import summarize_subqueries
-from ..state import ResearchState, SearchIntent, TopicStatus
+from ..state import ResearchState, ResearchTopic, SearchIntent, TopicStatus
 from .base import log_node_activity, log_runtime_event, update_stage_llm_usage
 
 if TYPE_CHECKING:
@@ -17,6 +17,47 @@ if TYPE_CHECKING:
 class PlannerNode:
     def __init__(self, runtime: ResearchRuntime) -> None:
         self._runtime = runtime
+
+    def _normalize_evidence_target(self, query: str, topic: ResearchTopic, current_target: int) -> int:
+        query_text = query.lower()
+        broad_markers = (
+            "compare",
+            "compar",
+            "versus",
+            " vs ",
+            "landscape",
+            "outlook",
+            "market",
+            "ecosystem",
+            "analysis",
+            "analisis",
+            "análisis",
+            "deep",
+            "profund",
+            "panorama",
+        )
+        boost = 1 if any(marker in query_text for marker in broad_markers) else 0
+        if len(topic.success_criteria) >= 2:
+            boost += 1
+        floor = self._runtime.config.runtime.min_topic_evidence_target
+        ceiling = max(floor, self._runtime.config.runtime.max_topic_evidence_target)
+        return min(max(current_target, floor + boost), ceiling)
+
+    def _normalize_topics(self, state: ResearchState, topics: list[ResearchTopic]) -> list[ResearchTopic]:
+        normalized: list[ResearchTopic] = []
+        for topic in topics:
+            normalized.append(
+                topic.model_copy(
+                    update={
+                        "evidence_target": self._normalize_evidence_target(
+                            state["query"],
+                            topic,
+                            topic.evidence_target,
+                        )
+                    }
+                )
+            )
+        return normalized
 
     def _inject_verbatim_intent(
         self,
@@ -43,9 +84,10 @@ class PlannerNode:
         payload, usage = self._runtime.llm_workers.plan_research_with_usage(
             self._runtime.context_manager.planner_context(state)
         )
+        incoming_topics = self._normalize_topics(state, list(payload.subqueries))
 
         known_ids = {topic.id for topic in state["plan"]}
-        new_topics = [topic for topic in payload.subqueries if topic.id not in known_ids]
+        new_topics = [topic for topic in incoming_topics if topic.id not in known_ids]
         plan = [*state["plan"], *new_topics]
         active_topic_id = state["active_topic_id"]
         if active_topic_id is None:

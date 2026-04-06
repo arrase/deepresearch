@@ -1,14 +1,17 @@
 # DeepResearch
 
-DeepResearch is a local-first research CLI for complex, open-ended questions. It plans a research path, searches the web through Tavily, extracts evidence with a local Ollama model, evaluates whether coverage is good enough, and produces a final report with traceable citations.
+DeepResearch is a local-first research CLI for complex, open-ended questions. It plans a research path, searches the web through Tavily, extracts evidence with a local Ollama model, evaluates whether coverage is good enough, synthesizes topic briefs, and produces a final report with traceable citations.
 
 ## Key Features
 
 - Autonomous research planning with subqueries and search intents.
 - Local-first execution through Ollama.
 - Tavily-backed source discovery with raw-content extraction.
+- Multi-pass extraction from the same source when the content is dense enough to justify deeper evidence capture.
+- Topic-level synthesis before the final report, so long answers are built from richer intermediate briefs instead of a flat evidence list.
 - Traceable reports backed by atomic evidence, URLs, and quotations.
 - Iterative refinement that re-searches when coverage is weak.
+- Configurable report language. The final report parser is language-agnostic as long as the generated report keeps the expected section structure.
 - Markdown, PDF, and Discord output modes.
 
 ## How A Run Works
@@ -17,10 +20,11 @@ Each run follows the same loop:
 
 1. The planner turns your question into subqueries and search intents.
 2. The source manager searches Tavily and filters candidates with usable raw content.
-3. The extractor turns useful passages into atomic evidence.
+3. The extractor runs one or more extraction passes over the most relevant chunks of each source and turns useful passages into atomic evidence.
 4. The context manager curates evidence and updates the working dossier.
 5. The evaluator decides whether the research is sufficient or whether another cycle is needed.
-6. The synthesizer writes the final report once the run stops.
+6. The topic synthesizer writes a brief for each completed topic once the run stops.
+7. The synthesizer writes the final report from topic briefs, dossier state, and selected evidence.
 
 ## Requirements
 
@@ -65,7 +69,7 @@ ollama serve
 DeepResearch creates an editable config tree under ~/.deepresearch/config/ the first time the CLI loads its configuration. That tree includes:
 
 - config.toml
-- prompts/ templates for planner, extractor, evaluator, synthesizer, and repair flows
+- prompts/ templates for planner, extractor, evaluator, topic_synthesizer, synthesizer, and repair flows
 
 Before your first real run, set a Tavily API key in ~/.deepresearch/config/config.toml.
 
@@ -74,7 +78,7 @@ Minimal search configuration:
 ```toml
 [search]
 api_key = "YOUR_TAVILY_API_KEY"
-results_per_query = 5
+results_per_query = 3
 max_raw_content_chars = 24000
 min_source_chars = 300
 ```
@@ -141,6 +145,11 @@ The main user-editable file is ~/.deepresearch/config/config.toml. The runtime v
 [model]
 model_name = "qwen3.5:9b" # Ollama model name used for all research stages.
 base_url = "http://127.0.0.1:11434" # Base URL of the local or remote Ollama server.
+temperature_planner = 0.2 # Sampling temperature for planning.
+temperature_extractor = 0.0 # Sampling temperature for evidence extraction.
+temperature_evaluator = 0.0 # Sampling temperature for coverage evaluation.
+temperature_synthesizer = 0.1 # Sampling temperature for final report synthesis.
+temperature_topic_synthesizer = 0.1 # Sampling temperature for topic-brief synthesis.
 num_ctx = 100000 # Maximum context window passed to Ollama.
 num_predict = 8192 # Maximum tokens generated per LLM call.
 timeout_seconds = 120 # Per-request timeout for Ollama calls.
@@ -154,6 +163,16 @@ api_key = "" # Tavily API key used for web search requests.
 results_per_query = 5 # Maximum Tavily results requested for each search query.
 max_raw_content_chars = 24000 # Maximum raw page characters kept from each search result.
 min_source_chars = 300 # Minimum source content length required before extraction.
+```
+
+### Reporter settings
+
+```toml
+[reporter]
+output_reserve_ratio = 0.20 # Fraction of the context window reserved for the final answer.
+prompt_margin_tokens = 512 # Extra prompt headroom kept free before synthesis.
+topic_brief_budget_ratio = 0.45 # Share of the synthesis prompt budget reserved for topic briefs.
+final_report_target_words = 1800 # Approximate target length for rich final reports.
 ```
 
 ### Runtime settings
@@ -170,6 +189,10 @@ semantic_eval_interval = 0 # Run evaluator every N cycles even without strong ev
 allow_dynamic_replan = true # Allow the planner to revise the topic plan during the run.
 verbosity = 0 # CLI log verbosity from quiet to detailed diagnostics.
 llm_retry_attempts = 2 # How many times to retry recoverable LLM parsing failures.
+min_topic_evidence_target = 2 # Minimum evidence target applied after planner normalization.
+max_topic_evidence_target = 4 # Upper bound for dynamically normalized topic evidence targets.
+extraction_max_chars_per_pass = 4000 # Maximum source characters sent to one extraction pass.
+max_extraction_passes_per_source = 3 # How many extraction passes can be run for one source.
 language = "English" # Language used for the final report.
 ```
 
@@ -196,12 +219,12 @@ The hard cap for research depth is max_iterations, but the run can stop earlier 
 
 The main stop reasons are:
 
-- sufficient_information
-- final_context_full
-- research_exhausted
+- context_saturation
+- plan_completed
 - max_iterations_reached
+- stuck_no_sources
 
-The runtime tracks signals such as newly accepted evidence, useful sources, resolved subqueries, and technical failures.
+The runtime tracks signals such as newly accepted evidence, useful sources, source diversity, resolved subqueries, and technical failures.
 
 ## Discord Delivery
 

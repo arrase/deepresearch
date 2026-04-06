@@ -23,6 +23,7 @@ def build_graph(runtime: ResearchRuntime) -> CompiledResearchGraph:
     graph.add_node("extractor", nodes.extractor)
     graph.add_node("context_manager", nodes.context_manager)
     graph.add_node("evaluator", nodes.evaluator)
+    graph.add_node("topic_synthesizer", nodes.topic_synthesizer)
     graph.add_node("synthesizer", nodes.synthesizer)
 
     graph.add_edge(START, "planner")
@@ -37,8 +38,9 @@ def build_graph(runtime: ResearchRuntime) -> CompiledResearchGraph:
     graph.add_conditional_edges(
         "evaluator",
         _route_after_evaluator,
-        {"synthesizer": "synthesizer", "source_manager": "source_manager", "planner": "planner"},
+        {"topic_synthesizer": "topic_synthesizer", "source_manager": "source_manager", "planner": "planner"},
     )
+    graph.add_edge("topic_synthesizer", "synthesizer")
     graph.add_edge("synthesizer", END)
     return cast(CompiledResearchGraph, graph.compile())
 
@@ -51,7 +53,7 @@ def _route_after_source_manager(state: ResearchState) -> str:
 
 def _route_after_evaluator(state: ResearchState) -> str:
     if state.get("stop_reason"):
-        return "synthesizer"
+        return "topic_synthesizer"
     if state.get("replan_requested") or not state["plan"]:
         return "planner"
     return "source_manager"

@@ -19,6 +19,23 @@ class SynthesizerNode:
     def __init__(self, runtime: ResearchRuntime) -> None:
         self._runtime = runtime
 
+    def _estimate_confidence(self, state: ResearchState) -> ConfidenceLevel:
+        if not state["curated_evidence"]:
+            return ConfidenceLevel.LOW
+        gap_count = len(state["open_gaps"])
+        contradiction_count = len(state["contradictions"])
+        distinct_domains = {
+            source.url
+            for evidence in state["curated_evidence"]
+            for source in evidence.sources
+        }
+        if contradiction_count or gap_count > max(2, len(state["plan"])):
+            return ConfidenceLevel.LOW
+        target_total = sum(topic.evidence_target for topic in state["plan"]) or 1
+        if len(state["curated_evidence"]) >= target_total and len(distinct_domains) >= max(2, len(state["plan"])):
+            return ConfidenceLevel.HIGH
+        return ConfidenceLevel.MEDIUM
+
     def _fallback_report(self, state: ResearchState) -> FinalReport:
         gap_lines = [gap.description for gap in state["open_gaps"][:5]]
         markdown = "\n\n".join(
@@ -81,6 +98,9 @@ class SynthesizerNode:
         report.prompt_tokens = synthesis_budget.base_prompt_tokens
         report.evidence_tokens = synthesis_budget.selected_evidence_tokens
         report.available_prompt_tokens = synthesis_budget.available_prompt_tokens
+        report.confidence = self._estimate_confidence(state)
+        if not report.open_gaps:
+            report.open_gaps = [gap.description for gap in state["open_gaps"][:6]]
         report.llm_usage = usage
         llm_usage = update_stage_llm_usage(state.get("llm_usage", {}), "synthesizer", usage)
         log_runtime_event(

@@ -18,6 +18,7 @@ from deepresearch.state import (
     ResearchTopic,
     SearchCandidate,
     SearchIntent,
+    TopicBrief,
     TopicStatus,
 )
 
@@ -40,7 +41,22 @@ class FakeSearchClient:
                     "Utilities are increasing pilot budgets, industrial buyers are evaluating procurement options, "
                     "and analysts describe stronger near-term interest in demonstration-scale deployments. "
                 ),
-            )
+            ),
+            SearchCandidate(
+                url="https://industry.example.org/analysis",
+                normalized_url="https://industry.example.org/analysis",
+                title="Industry analysis",
+                snippet=f"Independent analysis for {query}",
+                domain="industry.example.org",
+                raw_content=(
+                    "# Industry analysis\n\n"
+                    "Procurement teams are expanding heat-pump deployment planning in industrial sites, "
+                    "with project pipelines growing in 2026 and engineering constraints still slowing delivery. "
+                    "Developers describe more qualified demand, but execution bottlenecks remain a major limiter. "
+                    "Procurement teams are expanding heat-pump deployment planning in industrial sites, "
+                    "with project pipelines growing in 2026 and engineering constraints still slowing delivery. "
+                ),
+            ),
         ]
 
 
@@ -93,14 +109,25 @@ class FakeLLMWorkers:
         return self.plan_research(context), {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15}
 
     def extract_evidence(self, context: object) -> EvidencePayload:
-        draft = EvidenceDraft(
-            summary="Demand increased",
-            claim="Fusion demand is rising in 2026.",
-            quotation="Fusion demand is rising in 2026.",
-            citation_locator="paragraph 1",
-            relevance_score=0.9,
-            confidence=ConfidenceLevel.HIGH,
-        )
+        local_source = getattr(context, "local_source", "")
+        if "engineering constraints" in local_source:
+            draft = EvidenceDraft(
+                summary="Demand is growing but delivery is constrained",
+                claim="Industrial demand is growing in 2026, but engineering constraints still slow deployment.",
+                quotation="project pipelines growing in 2026 and engineering constraints still slowing delivery",
+                citation_locator="paragraph 1",
+                relevance_score=0.85,
+                confidence=ConfidenceLevel.HIGH,
+            )
+        else:
+            draft = EvidenceDraft(
+                summary="Demand increased",
+                claim="Fusion demand is rising in 2026.",
+                quotation="Fusion demand is rising in 2026.",
+                citation_locator="paragraph 1",
+                relevance_score=0.9,
+                confidence=ConfidenceLevel.HIGH,
+            )
         return EvidencePayload(evidences=[draft])
 
     def extract_evidence_with_usage(self, context: object) -> tuple[EvidencePayload, dict[str, int]]:
@@ -139,6 +166,32 @@ class FakeLLMWorkers:
 
     def synthesize_report_with_usage(self, context: object, query: str) -> tuple[FinalReport, dict[str, int]]:
         return self.synthesize_report(context, query), {"input_tokens": 30, "output_tokens": 40, "total_tokens": 70}
+
+    def synthesize_topic_brief(self, context: object, query: str, topic: ResearchTopic) -> TopicBrief:
+        return TopicBrief(
+            topic_id=topic.id,
+            question=topic.question,
+            markdown_brief=(
+                f"### Topic\n{topic.question}\n\n"
+                "### Answer\nFusion demand increased in 2026.\n\n"
+                "### Evidence Highlights\n- Demand increased.\n\n"
+                "### Uncertainty And Gaps\n- No major gaps."
+            ),
+            evidence_ids=["evidence_demo"],
+            source_urls=["https://example.com/report"],
+        )
+
+    def synthesize_topic_brief_with_usage(
+        self,
+        context: object,
+        query: str,
+        topic: ResearchTopic,
+    ) -> tuple[TopicBrief, dict[str, int]]:
+        return self.synthesize_topic_brief(context, query, topic), {
+            "input_tokens": 18,
+            "output_tokens": 22,
+            "total_tokens": 40,
+        }
 
 
 class InsufficientLLMWorkers(FakeLLMWorkers):
