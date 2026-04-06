@@ -68,7 +68,6 @@ def generate_pdf(markdown_text: str, output_path: Path | None = None) -> bytes:
         padding: 15px;
         border-radius: 5px;
         border: 1px solid #e1e4e8;
-        overflow-x: auto;
         white-space: pre-wrap;
         word-wrap: break-word;
     }
@@ -99,7 +98,7 @@ def generate_pdf(markdown_text: str, output_path: Path | None = None) -> bytes:
     }
     """
 
-    html_text = markdown.markdown(markdown_text, extensions=['extra', 'codehilite', 'toc'])
+    html_text = markdown.markdown(markdown_text, extensions=["extra", "toc"])
     full_html = f"""
     <!DOCTYPE html>
     <html lang="en">
