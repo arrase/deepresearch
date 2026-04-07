@@ -1,0 +1,17 @@
+Return one JSON object:
+{
+  "approved": false,
+  "objections": ["..."],
+  "suggested_topics": [
+    {"id": "topic_1_fix", "question": "...", "rationale": "...", "priority": 1, "evidence_target": 1, "search_terms": ["..."]}
+  ],
+  "unresolved_limitations": ["..."],
+  "rationale": "..."
+}
+Rules:
+- `approved` must be true or false.
+- `objections` and `unresolved_limitations` may be empty lists.
+- `suggested_topics` must be empty if `approved` is true.
+- Each suggested topic must have search_terms.
+- No extra keys.
+- JSON only.

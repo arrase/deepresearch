@@ -1,0 +1,23 @@
+Return one JSON object:
+{
+  "chapter_id": "topic_1",
+  "title": "...",
+  "executive_summary": "...",
+  "sections": [
+    {"title": "...", "summary": "...", "body": "...", "evidence_ids": ["..."], "topic_ids": ["..."]}
+  ],
+  "key_findings": ["..."],
+  "evidence_ids": ["..."],
+  "cited_sources": [
+    {"url": "...", "title": "...", "evidence_ids": ["..."]}
+  ],
+  "confidence": "medium",
+  "limitations": ["..."],
+  "open_gaps": ["..."]
+}
+Rules:
+- chapter_id must match the chapter being synthesized.
+- confidence must be "low", "medium", or "high".
+- All lists may be empty if not applicable.
+- No extra keys.
+- JSON only.

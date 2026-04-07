@@ -1,0 +1,40 @@
+Research question:
+{{ query }}
+
+Chapter to synthesize:
+- ID: {{ chapter_id }}
+- Question: {{ chapter_question }}
+
+Evidence for this chapter:
+{{ evidentiary }}
+
+{% if open_gaps %}
+Acknowledged gaps:
+{{ open_gaps }}
+{% endif %}
+
+{% if limitations %}
+Unresolved limitations:
+{{ limitations }}
+{% endif %}
+
+Task:
+Write a structured chapter draft based exclusively on the provided evidence.
+
+Rules:
+- `title` should be a descriptive chapter heading (not the raw question).
+- `executive_summary` should be a 2-3 sentence summary of the chapter findings.
+- `sections` should organize the evidence into logical sub-sections. Each section needs a title, a one-line summary, and a body with the actual analysis.
+- `key_findings` should list the most important facts discovered (3-7 bullet points).
+- `evidence_ids` must list all evidence IDs you referenced.
+- `cited_sources` must list the URLs and titles of sources used, with the evidence IDs they support.
+- `confidence` must be "low", "medium", or "high" based on evidence quality and coverage.
+- `limitations` should note what the evidence does not cover or where it is weak.
+- `open_gaps` should list specific unanswered questions.
+- Do not invent facts beyond what the evidence shows.
+- Adapt length to the evidence: 200-500 words if evidence is thin, 500-1000 words if rich.
+
+Output discipline:
+- Return valid JSON only.
+- No commentary.
+- No extra keys.

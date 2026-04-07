@@ -41,8 +41,8 @@
 
                 <div class="stat-strip">
                     <div class="stat-card">
-                        <strong>6 graph stages</strong>
-                        <span>Planner, search, extraction, context curation, evaluation, synthesis.</span>
+                        <strong>9 graph nodes</strong>
+                        <span>Meta-planner, micro-planner, search, extraction, curation, evaluation, auditor, chapter synthesis, global synthesis.</span>
                     </div>
                     <div class="stat-card">
                         <strong>Local-first runtime</strong>
@@ -64,12 +64,15 @@
                     </div>
                     <pre><code>deepresearch "Compare web research APIs for deep analysis workflows"
 
-planner        builds subqueries and search intent
-source_manager gathers candidates with raw content
-extractor      turns passages into atomic evidence
-context_manager curates the working dossier
-evaluator      decides whether to continue
-synthesizer    writes the final report</code></pre>
+meta_planner    decomposes the question into chapters
+micro_planner   plans sub-topics for each chapter
+source_manager  searches Tavily for candidates
+extractor       turns passages into atomic evidence
+context_manager curates and deduplicates evidence
+evaluator       deterministic coverage assessment
+auditor         devil's advocate chapter review
+sub_synthesizer writes each chapter draft
+global_synth    assembles the final report</code></pre>
                 </div>
 
                 <div class="snapshot-card">
@@ -95,7 +98,7 @@ synthesizer    writes the final report</code></pre>
             <div class="sample-output-grid">
                 <article class="sample-report-card">
                     <p class="command-title">Generated Report</p>
-                    <h3>Lightpanda vs Playwright</h3>
+                    <h3>Will OpenAI end up bankrupt?</h3>
                     <p>
                         Open the bundled PDF example to see the final layout, writing style, and report structure produced by the application.
                     </p>
@@ -105,7 +108,7 @@ synthesizer    writes the final report</code></pre>
                         <a href="report.pdf" class="secondary-button" download>Download report.pdf</a>
                     </div>
 
-                    <div class="feature-code">deepresearch "Lightpanda vs Playwright"  --pdf report.pdf</div>
+                    <div class="feature-code">deepresearch "Will OpenAI end up bankrupt?"  --pdf report.pdf</div>
                 </article>
 
                 <article class="sample-spec-card">
@@ -130,7 +133,7 @@ synthesizer    writes the final report</code></pre>
                     </div>
 
                     <ul class="data-list sample-notes">
-                        <li><strong>Question:</strong> The report investigates how Lightpanda compares to Playwright for browser automation and web interaction workflows.</li>
+                        <li><strong>Question:</strong> The report investigates the financial, legal, and operational risks of OpenAI.</li>
                         <li><strong>Generated locally:</strong> The example reflects a local Ollama-backed run rather than a hosted black-box pipeline.</li>
                         <li><strong>Auditability preserved:</strong> The final document remains aligned with DeepResearch's evidence-first reporting model.</li>
                     </ul>
@@ -143,8 +146,8 @@ synthesizer    writes the final report</code></pre>
         <div class="container">
             <h2>Key Features</h2>
             <p class="section-intro">
-                The site mirrors the same card-based structure used in ollama-agent/docs, but the content below is tied to
-                DeepResearch itself: the LangGraph loop, the runtime controls, and the final report behavior exposed by the CLI.
+                The cards below describe the core capabilities of DeepResearch: the hierarchical LangGraph pipeline,
+                the Map-Reduce chapter architecture, the runtime controls, and the final report behavior exposed by the CLI.
             </p>
 
             <div class="feature-list">
@@ -152,20 +155,23 @@ synthesizer    writes the final report</code></pre>
                     <div class="feature-header">
                         <div class="feature-icon"><i class="fas fa-diagram-project"></i></div>
                         <div>
-                            <h3>StateGraph Research Loop</h3>
-                            <p class="feature-description">A compiled LangGraph pipeline orchestrates the full research process from planning to synthesis.</p>
+                            <h3>Map-Reduce Research Pipeline</h3>
+                            <p class="feature-description">A hierarchical LangGraph pipeline decomposes research into independent chapters, investigates each one, and merges the results into a final report.</p>
                         </div>
                     </div>
                     <div class="feature-body">
                         <div class="usage-box">
                             <p class="usage-title">Graph Nodes</p>
                             <table class="cmd-table">
-                                <tr><td>planner</td><td>Builds subqueries and search intent</td></tr>
-                                <tr><td>source_manager</td><td>Fetches and filters candidate sources</td></tr>
+                                <tr><td>meta_planner</td><td>Decomposes the question into research chapters</td></tr>
+                                <tr><td>micro_planner</td><td>Creates sub-topics and search intents per chapter</td></tr>
+                                <tr><td>source_manager</td><td>Searches Tavily and filters candidate sources</td></tr>
                                 <tr><td>extractor</td><td>Converts passages into atomic evidence</td></tr>
-                                <tr><td>context_manager</td><td>Curates the working dossier</td></tr>
-                                <tr><td>evaluator</td><td>Decides whether to continue, replan, or stop</td></tr>
-                                <tr><td>synthesizer</td><td>Writes the final answer and full report</td></tr>
+                                <tr><td>context_manager</td><td>Deduplicates evidence and updates the dossier</td></tr>
+                                <tr><td>evaluator</td><td>Deterministic coverage check — no LLM calls</td></tr>
+                                <tr><td>auditor</td><td>Devil's advocate review; can reject chapters</td></tr>
+                                <tr><td>sub_synthesizer</td><td>Writes a chapter draft from curated evidence</td></tr>
+                                <tr><td>global_synthesizer</td><td>Assembles all chapter drafts into the final report</td></tr>
                             </table>
                         </div>
                     </div>
@@ -285,40 +291,55 @@ instead of being silently ignored.</div>
         <div class="container">
             <h2>Research Pipeline</h2>
             <p class="section-intro">
-                DeepResearch does not run a single search-and-summarize pass. It cycles through evidence collection,
-                context curation, and evaluation until the runtime believes another iteration would no longer add useful information.
+                DeepResearch uses a hierarchical Map-Reduce architecture. Each chapter is researched independently
+                through its own search-extract-evaluate loop, then all chapter drafts are merged into a single final report.
             </p>
 
             <div class="process-grid">
                 <article class="process-step">
                     <span class="step-index">01</span>
-                    <h3>Plan</h3>
-                    <p>The planner converts the user question into subqueries and search intents.</p>
+                    <h3>Decompose</h3>
+                    <p>The meta-planner breaks the question into independent research chapters, each covering a distinct angle.</p>
                 </article>
                 <article class="process-step">
                     <span class="step-index">02</span>
+                    <h3>Plan Chapter</h3>
+                    <p>The micro-planner creates focused sub-topics with search terms and intents for the current chapter.</p>
+                </article>
+                <article class="process-step">
+                    <span class="step-index">03</span>
                     <h3>Discover</h3>
                     <p>The source manager searches Tavily and selects candidates with enough raw content to inspect.</p>
                 </article>
                 <article class="process-step">
-                    <span class="step-index">03</span>
-                    <h3>Extract</h3>
-                    <p>The extractor turns passages into atomic evidence that can be reused during synthesis.</p>
-                </article>
-                <article class="process-step">
                     <span class="step-index">04</span>
-                    <h3>Curate</h3>
-                    <p>The context manager updates the working dossier and keeps the useful context available for later steps.</p>
+                    <h3>Extract</h3>
+                    <p>The extractor turns passages into atomic evidence attached to source URLs and quotations.</p>
                 </article>
                 <article class="process-step">
                     <span class="step-index">05</span>
-                    <h3>Evaluate</h3>
-                    <p>The evaluator decides whether the run is sufficient, exhausted, or needs dynamic replanning.</p>
+                    <h3>Curate</h3>
+                    <p>The context manager deduplicates evidence, merges near-duplicates, and updates the working dossier.</p>
                 </article>
                 <article class="process-step">
                     <span class="step-index">06</span>
-                    <h3>Synthesize</h3>
-                    <p>The synthesizer writes the executive answer and the final report once the runtime stops.</p>
+                    <h3>Evaluate</h3>
+                    <p>A deterministic evaluator tracks coverage and stagnation signals to decide whether to continue, audit, or stop.</p>
+                </article>
+                <article class="process-step">
+                    <span class="step-index">07</span>
+                    <h3>Audit</h3>
+                    <p>The auditor reviews chapter evidence as a devil's advocate and can reject it back to the micro-planner.</p>
+                </article>
+                <article class="process-step">
+                    <span class="step-index">08</span>
+                    <h3>Chapter Synthesis</h3>
+                    <p>The sub-synthesizer produces a structured chapter draft from the curated evidence for each completed chapter.</p>
+                </article>
+                <article class="process-step">
+                    <span class="step-index">09</span>
+                    <h3>Final Report</h3>
+                    <p>The global synthesizer assembles all chapter drafts into the final report with executive answer and citations.</p>
                 </article>
             </div>
 
@@ -326,10 +347,10 @@ instead of being silently ignored.</div>
                 <div class="command-group">
                     <p class="command-title">Stop Conditions</p>
                     <ul class="data-list">
-                        <li><strong>sufficient_information</strong> when the evaluator believes the dossier is already good enough.</li>
-                        <li><strong>final_context_full</strong> when the final context budget has effectively been consumed.</li>
-                        <li><strong>research_exhausted</strong> when further cycles stop producing useful sources or evidence.</li>
-                        <li><strong>max_iterations_reached</strong> when the run reaches the configured hard cap.</li>
+                        <li><strong>CONTEXT_SATURATION</strong> when the synthesis token budget has been effectively consumed.</li>
+                        <li><strong>PLAN_COMPLETED</strong> when every chapter has been audited and synthesized.</li>
+                        <li><strong>MAX_ITERATIONS_REACHED</strong> when the run reaches the configured hard cap.</li>
+                        <li><strong>STUCK_NO_SOURCES</strong> when repeated cycles fail to produce new evidence or useful sources.</li>
                     </ul>
                 </div>
 
@@ -355,6 +376,12 @@ instead of being silently ignored.</div>
                     <pre><code>[model]
 model_name = "qwen3.5:9b"
 base_url = "http://127.0.0.1:11434"
+temperature_meta_planner = 0.3
+temperature_micro_planner = 0.2
+temperature_extractor = 0.0
+temperature_auditor = 0.3
+temperature_sub_synthesizer = 0.1
+temperature_global_synthesizer = 0.1
 num_ctx = 100000
 num_predict = 8192
 
@@ -366,7 +393,9 @@ min_source_chars = 300
 [runtime]
 max_iterations = 8
 search_batch_size = 3
-allow_dynamic_replan = true
+max_chapters = 5
+max_topic_depth = 2
+max_audit_rejections = 2
 verbosity = 0</code></pre>
                 </div>
 

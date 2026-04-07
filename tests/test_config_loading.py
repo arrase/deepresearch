@@ -18,7 +18,7 @@ def test_load_bootstraps_project_style_config_root(tmp_path) -> None:
     assert config.config_root == config_root.resolve()
     assert config.config_file_path.exists()
     assert config.prompts_dir.exists()
-    assert (config.prompts_dir / "planner" / "system.j2").exists()
+    assert (config.prompts_dir / "meta_planner" / "system.j2").exists()
 
 
 def test_bootstrap_config_file_contains_inline_help_comments(tmp_path) -> None:
@@ -27,18 +27,18 @@ def test_bootstrap_config_file_contains_inline_help_comments(tmp_path) -> None:
     config_text = config.config_file_path.read_text(encoding="utf-8")
 
     assert 'api_key = "" # Tavily API key used for web search requests.' in config_text
-    assert 'max_iterations = 8 # Hard cap on planner and search cycles for a run.' in config_text
+    assert 'max_iterations = 8 # Hard cap on total search cycles across all chapters.' in config_text
 
 
 def test_prompt_loader_renders_user_editable_template(tmp_path) -> None:
     prompts_dir = tmp_path / "prompts"
-    planner_dir = prompts_dir / "planner"
-    planner_dir.mkdir(parents=True)
-    (planner_dir / "system.j2").write_text("System {{ value }}", encoding="utf-8")
-    (planner_dir / "human.j2").write_text("Human {{ value }}", encoding="utf-8")
+    meta_planner_dir = prompts_dir / "meta_planner"
+    meta_planner_dir.mkdir(parents=True)
+    (meta_planner_dir / "system.j2").write_text("System {{ value }}", encoding="utf-8")
+    (meta_planner_dir / "human.j2").write_text("Human {{ value }}", encoding="utf-8")
 
     loader = PromptTemplateLoader(prompts_dir)
-    rendered = loader.render("planner", {"value": "template"})
+    rendered = loader.render("meta_planner", {"value": "template"})
 
     assert rendered.system == "System template"
     assert rendered.human == "Human template"
@@ -74,8 +74,9 @@ def test_loaded_config_uses_runtime_synthesis_budget_settings(tmp_path) -> None:
     assert config.runtime.max_cycles_without_useful_sources == 4
     assert config.runtime.search_batch_size == 3
     assert config.runtime.min_attempts_before_exhaustion == 3
-    assert config.runtime.semantic_eval_interval == 0
-    assert config.runtime.allow_dynamic_replan is True
+    assert config.runtime.max_chapters == 5
+    assert config.runtime.max_topic_depth == 2
+    assert config.runtime.max_audit_rejections == 2
 
 
 def test_load_rejects_unknown_root_sections(tmp_path) -> None:

@@ -1,0 +1,64 @@
+Research question:
+{{ query }}
+
+Chapter drafts:
+{% for chapter in chapters %}
+---
+## Chapter: {{ chapter.title }}
+{{ chapter.executive_summary }}
+
+Key findings:
+{% for finding in chapter.key_findings %}
+- {{ finding }}
+{% endfor %}
+
+Sections:
+{% for section in chapter.sections %}
+### {{ section.title }}
+{{ section.body }}
+{% endfor %}
+
+{% if chapter.limitations %}
+Limitations:
+{% for lim in chapter.limitations %}
+- {{ lim }}
+{% endfor %}
+{% endif %}
+
+{% if chapter.open_gaps %}
+Open gaps:
+{% for gap in chapter.open_gaps %}
+- {{ gap }}
+{% endfor %}
+{% endif %}
+
+Confidence: {{ chapter.confidence }}
+---
+{% endfor %}
+
+{% if global_limitations %}
+Cross-chapter limitations:
+{% for lim in global_limitations %}
+- {{ lim }}
+{% endfor %}
+{% endif %}
+
+Task:
+Assemble a final, polished research report from the chapter drafts above.
+
+Required structure:
+- `# Title` (concise, descriptive title for the report)
+- `## Executive Answer` (direct answer to the research question in 2-4 sentences)
+- `## Key Findings` (bulleted list of the most important facts across all chapters)
+- One `## Section` per chapter, incorporating the chapter content with editorial polish
+- `## Limitations And Open Gaps` (combined from all chapters plus any cross-cutting issues)
+
+Style rules:
+- Write smooth transitions between chapters.
+- Prefer short paragraphs and direct wording.
+- Synthesize across chapters; do not merely concatenate them.
+- If evidence is thin or incomplete, say so plainly.
+- Do not fabricate inline citations or source names beyond what appears in the chapter drafts.
+- The runtime will append the final referenced-sources section separately.
+- Adapt the report length to the content available: roughly 400-800 words for a 2-chapter report, 800-1500 words for 4-5 chapters.
+- Return Markdown only.

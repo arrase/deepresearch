@@ -1,0 +1,50 @@
+Research question:
+{{ query }}
+
+Today's date: {{ today_date }}
+
+Chapter to plan:
+- ID: {{ chapter_id }}
+- Question: {{ chapter_question }}
+- Rationale: {{ chapter_rationale }}
+- Success criteria: {{ chapter_criteria }}
+
+{% if existing_subtopics %}
+Existing sub-topics for this chapter:
+{{ existing_subtopics }}
+{% endif %}
+
+{% if open_gaps %}
+Open gaps requiring attention:
+{{ open_gaps }}
+{% endif %}
+
+{% if dossier_context %}
+Current findings for this chapter:
+{{ dossier_context }}
+{% endif %}
+
+{% if coverage_summary %}
+Coverage summary:
+{{ coverage_summary }}
+{% endif %}
+
+Task:
+Create focused sub-topics and search intents for this chapter.
+
+Rules:
+- Each sub-topic must address a specific dimension of the chapter question.
+- If sub-topics already exist, add only what is missing to cover open gaps. Do not duplicate existing sub-topics.
+- Prefer 2 to 4 sub-topics per chapter. Fewer is better if the chapter is narrow.
+- Use the SAME language as the research question for question, rationale, and success_criteria.
+- search_terms must be short web-search keyword phrases (2-5 words).
+- Each search_term must be DIFFERENT from the others. Vary angles, synonyms, and specificity.
+- search_terms should use the language most likely to get good results. For regional queries, keep the original language. For technical topics, prefer English terms.
+- search_intents must point to sub-topic ids through topic_ids. Each intent query should be a realistic web search.
+- evidence_target should be 1 or 2 per sub-topic.
+- Do not create sub-topics that duplicate the chapter question itself.
+
+Output discipline:
+- Return valid JSON only.
+- No commentary.
+- No extra keys.

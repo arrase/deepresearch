@@ -1,10 +1,12 @@
 [model]
 model_name = "qwen3.5:9b" # Ollama model name used for all research stages.
 base_url = "http://127.0.0.1:11434" # Base URL of the local or remote Ollama server.
-temperature_planner = 0.2 # Sampling temperature for planning.
+temperature_meta_planner = 0.3 # Sampling temperature for chapter decomposition.
+temperature_micro_planner = 0.2 # Sampling temperature for sub-topic planning.
 temperature_extractor = 0.0 # Sampling temperature for evidence extraction.
-temperature_evaluator = 0.0 # Sampling temperature for coverage evaluation.
-temperature_synthesizer = 0.1 # Sampling temperature for final report synthesis.
+temperature_auditor = 0.3 # Sampling temperature for the auditor (devil's advocate).
+temperature_sub_synthesizer = 0.1 # Sampling temperature for per-chapter synthesis.
+temperature_global_synthesizer = 0.1 # Sampling temperature for final report assembly.
 num_ctx = 100000 # Maximum context window passed to Ollama.
 num_predict = 8192 # Maximum tokens generated per LLM call.
 timeout_seconds = 120 # Per-request timeout for Ollama calls.
@@ -31,14 +33,15 @@ user_id = "" # Discord user ID that receives the report.
 output = "pdf" # Attachment format when the report is too long for a message.
 
 [runtime]
-max_iterations = 8 # Hard cap on planner and search cycles for a run.
+max_iterations = 8 # Hard cap on total search cycles across all chapters.
 search_batch_size = 3 # How many candidate search queries to execute per cycle.
 min_attempts_before_exhaustion = 3 # Minimum attempts before a topic can be marked as exhausted.
 max_cycles_without_new_evidence = 4 # Stop after this many cycles without newly accepted evidence.
 max_cycles_without_useful_sources = 4 # Stop after this many cycles without useful sources.
 max_consecutive_technical_failures = 3 # Abort after too many consecutive technical failures.
-semantic_eval_interval = 0 # Run evaluator every N cycles even without strong evidence updates; 0 disables it.
-allow_dynamic_replan = true # Allow the planner to revise the topic plan during the run.
+max_chapters = 5 # Maximum chapters the meta-planner can create (1-10).
+max_topic_depth = 2 # Maximum nesting depth for sub-topics below a chapter (1-4).
+max_audit_rejections = 2 # How many times the auditor can reject a chapter before auto-approval (0-5).
 verbosity = 0 # CLI log verbosity from quiet to detailed diagnostics.
 llm_retry_attempts = 2 # How many times to retry recoverable LLM parsing failures.
 language = "English" # Language used for the final report.

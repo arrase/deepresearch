@@ -21,3 +21,10 @@ def test_build_initial_state_has_required_fields() -> None:
     assert state["consecutive_technical_failures"] == 0
     assert state["new_evidence_in_cycle"] == 0
     assert state["useful_source_in_cycle"] is False
+    # New hierarchical fields
+    assert state["current_chapter_id"] is None
+    assert state["completed_chapter_ids"] == []
+    assert state["flushed_chapter_ids"] == []
+    assert state["chapter_drafts"] == []
+    assert state["topic_audit_attempts"] == {}
+    assert state["audit_approved"] is False

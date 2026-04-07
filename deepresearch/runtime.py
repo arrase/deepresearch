@@ -9,8 +9,8 @@ from typing import TYPE_CHECKING, Protocol
 if TYPE_CHECKING:
     from .config import ResearchConfig
     from .context_manager import ContextManager, NodeContext
-    from .core.payloads import CoveragePayload, EvidencePayload, PlannerPayload
-    from .state import FinalReport, SearchCandidate
+    from .core.payloads import AuditPayload, EvidencePayload, MetaPlannerPayload, MicroPlannerPayload
+    from .state import ChapterDraft, FinalReport, SearchCandidate
 
 
 class SearchClientLike(Protocol):
@@ -18,21 +18,39 @@ class SearchClientLike(Protocol):
 
 
 class LLMWorkersLike(Protocol):
-    def plan_research(self, context: NodeContext) -> PlannerPayload: ...
+    # -- meta-planner --
+    def meta_plan(self, context: NodeContext) -> MetaPlannerPayload: ...
 
-    def plan_research_with_usage(self, context: NodeContext) -> tuple[PlannerPayload, dict[str, int]]: ...
+    def meta_plan_with_usage(self, context: NodeContext) -> tuple[MetaPlannerPayload, dict[str, int]]: ...
 
+    # -- micro-planner --
+    def micro_plan(self, context: NodeContext) -> MicroPlannerPayload: ...
+
+    def micro_plan_with_usage(self, context: NodeContext) -> tuple[MicroPlannerPayload, dict[str, int]]: ...
+
+    # -- evidence extraction --
     def extract_evidence(self, context: NodeContext) -> EvidencePayload: ...
 
     def extract_evidence_with_usage(self, context: NodeContext) -> tuple[EvidencePayload, dict[str, int]]: ...
 
-    def evaluate_coverage(self, context: NodeContext) -> CoveragePayload: ...
+    # -- auditor --
+    def audit_evidence(self, context: NodeContext) -> AuditPayload: ...
 
-    def evaluate_coverage_with_usage(self, context: NodeContext) -> tuple[CoveragePayload, dict[str, int]]: ...
+    def audit_evidence_with_usage(self, context: NodeContext) -> tuple[AuditPayload, dict[str, int]]: ...
 
-    def synthesize_report(self, context: NodeContext, query: str) -> FinalReport: ...
+    # -- sub-synthesiser (per-chapter) --
+    def sub_synthesize(self, context: NodeContext, chapter_id: str) -> ChapterDraft: ...
 
-    def synthesize_report_with_usage(
+    def sub_synthesize_with_usage(
+        self,
+        context: NodeContext,
+        chapter_id: str,
+    ) -> tuple[ChapterDraft, dict[str, int]]: ...
+
+    # -- global synthesiser (final report) --
+    def global_synthesize(self, context: NodeContext, query: str) -> FinalReport: ...
+
+    def global_synthesize_with_usage(
         self,
         context: NodeContext,
         query: str,

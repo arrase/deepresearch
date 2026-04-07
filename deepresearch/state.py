@@ -1,4 +1,10 @@
-"""Canonical state and domain models for the SLM-oriented research pipeline."""
+"""Canonical state and domain models for the research pipeline.
+
+The hierarchical Map-Reduce architecture uses chapters (depth=0) that
+decompose into sub-topics (depth>=1).  Each chapter is researched
+independently, synthesised into a ``ChapterDraft``, and then all drafts
+are assembled into the ``FinalReport`` by a global synthesiser.
+"""
 
 from __future__ import annotations
 
@@ -10,6 +16,9 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field, field_validator
 
+# ---------------------------------------------------------------------------
+# Tiny helpers
+# ---------------------------------------------------------------------------
 
 def utc_now_iso() -> str:
     return datetime.now(UTC).isoformat()
@@ -17,7 +26,9 @@ def utc_now_iso() -> str:
 
 def coerce_bool(value: Any) -> bool:
     if isinstance(value, str):
-        return value.strip().lower() in {"true", "yes", "1", "si", "si.", "sí", "sí.", "true.", "yes."}
+        return value.strip().lower() in {
+            "true", "yes", "1", "si", "si.", "sí", "sí.", "true.", "yes.",
+        }
     return bool(value)
 
 
@@ -27,6 +38,10 @@ def coerce_int(value: Any, default: int = 1) -> int:
     match = re.search(r"\d+", str(value))
     return int(match.group(0)) if match else default
 
+
+# ---------------------------------------------------------------------------
+# Enums
+# ---------------------------------------------------------------------------
 
 class TopicStatus(StrEnum):
     PENDING = "pending"
@@ -66,6 +81,10 @@ class ConfidenceLevel(StrEnum):
     HIGH = "high"
 
 
+# ---------------------------------------------------------------------------
+# Search and planning models
+# ---------------------------------------------------------------------------
+
 class SearchIntent(BaseModel):
     query: str
     rationale: str
@@ -73,6 +92,13 @@ class SearchIntent(BaseModel):
 
 
 class ResearchTopic(BaseModel):
+    """A research topic in the hierarchical plan tree.
+
+    *  ``depth == 0`` -> chapter (meta-planner output).
+    *  ``depth >= 1`` -> sub-topic created by the micro-planner or auditor.
+    *  ``chapter_id`` always points to the root chapter it belongs to.
+    """
+
     id: str = Field(default_factory=lambda: f"topic_{uuid4().hex[:10]}")
     question: str
     rationale: str
@@ -82,6 +108,11 @@ class ResearchTopic(BaseModel):
     evidence_target: int = 1
     search_terms: list[str] = Field(default_factory=list)
     last_query: str | None = None
+
+    # -- hierarchical fields --
+    parent_id: str | None = None
+    depth: int = 0
+    chapter_id: str = ""
 
     @field_validator("priority", mode="before")
     @classmethod
@@ -93,6 +124,15 @@ class ResearchTopic(BaseModel):
     def clamp_evidence_target(cls, value: Any) -> int:
         return max(1, coerce_int(value, 1))
 
+    @field_validator("depth", mode="before")
+    @classmethod
+    def clamp_depth(cls, value: Any) -> int:
+        return max(0, coerce_int(value, 0))
+
+
+# ---------------------------------------------------------------------------
+# Search history models
+# ---------------------------------------------------------------------------
 
 class SearchAttempt(BaseModel):
     topic_id: str
@@ -137,6 +177,10 @@ class SourceRecord(BaseModel):
     processed_at: str = Field(default_factory=utc_now_iso)
 
 
+# ---------------------------------------------------------------------------
+# Evidence models
+# ---------------------------------------------------------------------------
+
 class EvidenceSourceRef(BaseModel):
     url: str
     title: str
@@ -162,6 +206,7 @@ class EvidenceDraft(BaseModel):
 class CuratedEvidence(BaseModel):
     evidence_id: str = Field(default_factory=lambda: f"evidence_{uuid4().hex[:12]}")
     topic_id: str
+    chapter_id: str = ""
     canonical_claim: str
     summary: str
     support_quotes: list[str] = Field(default_factory=list)
@@ -215,6 +260,10 @@ class WorkingDossier(BaseModel):
     updated_at: str = Field(default_factory=utc_now_iso)
 
 
+# ---------------------------------------------------------------------------
+# Synthesis budget
+# ---------------------------------------------------------------------------
+
 class SynthesisBudget(BaseModel):
     context_window_tokens: int = 0
     reserved_output_tokens: int = 0
@@ -228,6 +277,10 @@ class SynthesisBudget(BaseModel):
     candidate_evidence_count: int = 0
     final_context_full: bool = False
 
+
+# ---------------------------------------------------------------------------
+# Report models
+# ---------------------------------------------------------------------------
 
 class ReportSource(BaseModel):
     url: str
@@ -243,6 +296,33 @@ class ReportSection(BaseModel):
     topic_ids: list[str] = Field(default_factory=list)
 
 
+# ---------------------------------------------------------------------------
+# Chapter draft (sub-synthesiser output — lives in RAM only)
+# ---------------------------------------------------------------------------
+
+class ChapterDraft(BaseModel):
+    """Structured intermediate output produced by the sub-synthesiser.
+
+    One ``ChapterDraft`` is generated per completed chapter.  The global
+    synthesiser later consumes all drafts to produce the final report.
+    """
+
+    chapter_id: str
+    title: str
+    executive_summary: str = ""
+    sections: list[ReportSection] = Field(default_factory=list)
+    key_findings: list[str] = Field(default_factory=list)
+    evidence_ids: list[str] = Field(default_factory=list)
+    cited_sources: list[ReportSource] = Field(default_factory=list)
+    confidence: ConfidenceLevel = ConfidenceLevel.MEDIUM
+    limitations: list[str] = Field(default_factory=list)
+    open_gaps: list[str] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# Final report
+# ---------------------------------------------------------------------------
+
 class FinalReport(BaseModel):
     query: str
     executive_answer: str
@@ -254,7 +334,6 @@ class FinalReport(BaseModel):
     cited_sources: list[ReportSource] = Field(default_factory=list)
     evidence_ids: list[str] = Field(default_factory=list)
     markdown_report: str = ""
-    markdown_artifact_path: str | None = None
     stop_reason: str | None = None
     context_window_tokens: int | None = None
     reserved_output_tokens: int | None = None
@@ -265,13 +344,29 @@ class FinalReport(BaseModel):
     generated_at: str = Field(default_factory=utc_now_iso)
 
 
+# ---------------------------------------------------------------------------
+# Master research state (TypedDict for LangGraph)
+# ---------------------------------------------------------------------------
+
 class ResearchState(TypedDict):
+    # -- query & iteration --
     query: str
     max_iterations: int
     current_iteration: int
+
+    # -- hierarchical plan --
     plan: list[ResearchTopic]
     active_topic_id: str | None
     topic_attempts: dict[str, int]
+    current_chapter_id: str | None
+    completed_chapter_ids: list[str]
+    flushed_chapter_ids: list[str]
+
+    # -- chapter drafts (Map-Reduce) --
+    chapter_drafts: list[ChapterDraft]
+    topic_audit_attempts: dict[str, int]
+
+    # -- search --
     search_intents: list[SearchIntent]
     hypotheses: list[str]
     search_history: list[SearchAttempt]
@@ -279,16 +374,24 @@ class ResearchState(TypedDict):
     failed_queries: list[str]
     candidate_queue: list[SearchCandidate]
     current_batch: list[SearchCandidate]
+
+    # -- sources --
     visited_urls: dict[str, SourceRecord]
     discarded_sources: list[DiscardedSource]
+
+    # -- evidence pipeline --
     extracted_evidence_buffer: list[EvidenceDraft]
     curated_evidence: list[CuratedEvidence]
     accumulated_evidence_tokens_exact: int
     accumulated_evidence_tokens_prompt_fit: int
+
+    # -- evaluation & coverage --
     synthesis_budget: SynthesisBudget
     topic_coverage: dict[str, TopicCoverage]
     open_gaps: list[Gap]
     contradictions: list[Contradiction]
+
+    # -- stagnation counters --
     cycles_without_new_evidence: int
     cycles_without_useful_sources: int
     consecutive_empty_search_cycles: int
@@ -296,23 +399,39 @@ class ResearchState(TypedDict):
     new_evidence_in_cycle: int
     merged_evidence_in_cycle: int
     useful_source_in_cycle: bool
+
+    # -- control flow --
     stop_reason: str | None
     stop_details: str | None
     technical_reason: str | None
-    replan_requested: bool
+    audit_approved: bool
+
+    # -- working memory --
     working_dossier: WorkingDossier
     llm_usage: dict[str, dict[str, int]]
     final_report: FinalReport | None
 
+
+# ---------------------------------------------------------------------------
+# Factory
+# ---------------------------------------------------------------------------
 
 def build_initial_state(query: str, *, max_iterations: int) -> ResearchState:
     return {
         "query": query,
         "max_iterations": max_iterations,
         "current_iteration": 0,
+        # plan
         "plan": [],
         "active_topic_id": None,
         "topic_attempts": {},
+        "current_chapter_id": None,
+        "completed_chapter_ids": [],
+        "flushed_chapter_ids": [],
+        # chapter drafts
+        "chapter_drafts": [],
+        "topic_audit_attempts": {},
+        # search
         "search_intents": [],
         "hypotheses": [],
         "search_history": [],
@@ -320,16 +439,20 @@ def build_initial_state(query: str, *, max_iterations: int) -> ResearchState:
         "failed_queries": [],
         "candidate_queue": [],
         "current_batch": [],
+        # sources
         "visited_urls": {},
         "discarded_sources": [],
+        # evidence
         "extracted_evidence_buffer": [],
         "curated_evidence": [],
         "accumulated_evidence_tokens_exact": 0,
         "accumulated_evidence_tokens_prompt_fit": 0,
+        # evaluation
         "synthesis_budget": SynthesisBudget(),
         "topic_coverage": {},
         "open_gaps": [],
         "contradictions": [],
+        # counters
         "cycles_without_new_evidence": 0,
         "cycles_without_useful_sources": 0,
         "consecutive_empty_search_cycles": 0,
@@ -337,10 +460,12 @@ def build_initial_state(query: str, *, max_iterations: int) -> ResearchState:
         "new_evidence_in_cycle": 0,
         "merged_evidence_in_cycle": 0,
         "useful_source_in_cycle": False,
+        # control
         "stop_reason": None,
         "stop_details": None,
         "technical_reason": None,
-        "replan_requested": False,
+        "audit_approved": False,
+        # working memory
         "working_dossier": WorkingDossier(),
         "llm_usage": {},
         "final_report": None,

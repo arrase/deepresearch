@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 from collections.abc import Mapping
+from datetime import UTC, datetime
 
 from pydantic import BaseModel, Field
 
@@ -15,6 +16,7 @@ from .state import CuratedEvidence, Gap, ResearchState, ResearchTopic, Synthesis
 
 class NodeContext(BaseModel):
     query: str
+    today_date: str = ""
     has_subqueries: bool = False
     coverage_summary: str = ""
     source_balance_summary: str = ""
@@ -25,11 +27,33 @@ class NodeContext(BaseModel):
     evidentiary: list[CuratedEvidence] = Field(default_factory=list)
     local_source: str = ""
 
+    # -- chapter-scoped fields used by micro_planner / auditor / sub_synthesizer --
+    chapter_id: str = ""
+    chapter_question: str = ""
+    chapter_rationale: str = ""
+    chapter_criteria: str = ""
+    existing_subtopics: str = ""
+    subtopics_summary: str = ""
+    limitations: str = ""
+    audit_attempt: int = 0
+    max_audit_attempts: int = 2
+    max_chapters: int = 5
+    min_chapters: int = 2
+    hypotheses: str = ""
+
+    # -- global-synthesizer fields --
+    chapters: list[dict[str, object]] = Field(default_factory=list)
+    global_limitations: list[str] = Field(default_factory=list)
+
 
 class ContextManager:
     def __init__(self, config: ResearchConfig) -> None:
         self._config = config
         self._prompt_loader = PromptTemplateLoader(config.prompts_dir, strict_templates=True)
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
 
     def _render_bulleted(self, lines: list[str], *, empty_text: str = "- None") -> str:
         if not lines:
@@ -41,14 +65,33 @@ class ContextManager:
         resolved = [topic for topic in state["plan"] if topic.status == TopicStatus.COMPLETED]
         return active, resolved
 
+    def _chapter_topics(self, state: ResearchState, chapter_id: str) -> list[ResearchTopic]:
+        """All topics belonging to a chapter (including the chapter root itself)."""
+        return [t for t in state["plan"] if t.chapter_id == chapter_id]
+
+    def _chapter_evidence(self, state: ResearchState, chapter_id: str) -> list[CuratedEvidence]:
+        """Curated evidence belonging to a chapter, excluding flushed chapters."""
+        flushed = set(state.get("flushed_chapter_ids") or [])
+        if chapter_id in flushed:
+            return []
+        return [e for e in state["curated_evidence"] if e.chapter_id == chapter_id]
+
+    def _unflushed_evidence(self, state: ResearchState) -> list[CuratedEvidence]:
+        """All curated evidence whose chapter has not been flushed yet."""
+        flushed = set(state.get("flushed_chapter_ids") or [])
+        return [e for e in state["curated_evidence"] if e.chapter_id not in flushed]
+
     def _render_topics(self, topics: list[ResearchTopic]) -> str:
         return self._render_bulleted([f"- {topic.id}: {topic.question}" for topic in topics])
 
     def _render_gaps(self, gaps: list[Gap]) -> str:
         return self._render_bulleted([f"- {gap.topic_id}: {gap.description}" for gap in gaps[:5]])
 
-    def _render_coverage_summary(self, state: ResearchState) -> str:
-        if not state["plan"]:
+    def _render_coverage_summary(self, state: ResearchState, *, chapter_id: str | None = None) -> str:
+        topics = state["plan"]
+        if chapter_id:
+            topics = [t for t in topics if t.chapter_id == chapter_id]
+        if not topics:
             return "- No topics yet."
 
         evidence_domains: dict[str, Counter[str]] = defaultdict(Counter)
@@ -57,7 +100,7 @@ class ContextManager:
                 evidence_domains[evidence.topic_id][extract_domain(source.url)] += 1
 
         lines: list[str] = []
-        for topic in state["plan"]:
+        for topic in topics:
             coverage = state["topic_coverage"].get(topic.id)
             accepted = coverage.accepted_evidence_count if coverage else 0
             unique_domains = coverage.unique_domains if coverage else 0
@@ -98,9 +141,12 @@ class ContextManager:
     def _half_prompt_budget(self) -> int:
         return max(1, self._available_prompt_budget() // 2)
 
-    def _build_dossier(self, state: ResearchState) -> str:
+    def _build_dossier(self, state: ResearchState, *, chapter_id: str | None = None) -> str:
+        topics = state["plan"]
+        if chapter_id:
+            topics = [t for t in topics if t.chapter_id == chapter_id]
         chunks: list[str] = []
-        for topic in state["plan"]:
+        for topic in topics:
             summary = state["working_dossier"].topic_summaries.get(topic.id, "")
             chunks.append(f"{topic.id} | {topic.question}\n{summary}".strip())
         return "\n\n".join(chunk for chunk in chunks if chunk)
@@ -118,17 +164,159 @@ class ContextManager:
             budget_tokens=budget_tokens,
         )
 
+    # ------------------------------------------------------------------
+    # Public context builders
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _today() -> str:
+        return datetime.now(UTC).strftime("%Y-%m-%d")
+
+    def meta_planner_context(self, state: ResearchState) -> NodeContext:
+        """Context for the meta-planner: query + existing hypotheses."""
+        return NodeContext(
+            query=state["query"],
+            today_date=self._today(),
+            hypotheses="\n".join(f"- {h}" for h in state.get("hypotheses") or []) or "- None",
+            max_chapters=self._config.runtime.max_chapters,
+            min_chapters=max(1, self._config.runtime.max_chapters // 2),
+        )
+
+    def micro_planner_context(self, state: ResearchState, chapter: ResearchTopic) -> NodeContext:
+        """Context for the micro-planner: chapter + existing evidence + gaps."""
+        chapter_id = chapter.chapter_id or chapter.id
+        chapter_topics = self._chapter_topics(state, chapter_id)
+        chapter_evidence = self._chapter_evidence(state, chapter_id)
+        chapter_gaps = [g for g in state["open_gaps"] if g.topic_id in {t.id for t in chapter_topics}]
+        existing = [t for t in chapter_topics if t.depth > 0]
+        return NodeContext(
+            query=state["query"],
+            today_date=self._today(),
+            chapter_id=chapter_id,
+            chapter_question=chapter.question,
+            chapter_rationale=chapter.rationale,
+            chapter_criteria="\n".join(f"- {c}" for c in chapter.success_criteria) or "- None",
+            existing_subtopics=self._render_topics(existing),
+            open_gaps=self._render_gaps(chapter_gaps),
+            dossier_context=self._build_dossier(state, chapter_id=chapter_id),
+            coverage_summary=self._render_coverage_summary(state, chapter_id=chapter_id),
+            evidentiary=chapter_evidence,
+        )
+
+    def extractor_context(self, state: ResearchState, topic: ResearchTopic, local_source: str) -> NodeContext:
+        evidence = self._context_evidence(
+            state,
+            topic_ids=[topic.id],
+            budget_tokens=self._half_prompt_budget(),
+        )
+        return NodeContext(
+            query=state["query"],
+            active_subqueries=f"- {topic.id}: {topic.question}",
+            open_gaps=self._render_gaps([gap for gap in state["open_gaps"] if gap.topic_id == topic.id]),
+            evidentiary=evidence,
+            local_source=local_source,
+        )
+
+    def evaluator_context(self, state: ResearchState) -> NodeContext:
+        """Context for the deterministic evaluator, scoped to the current chapter."""
+        chapter_id = state.get("current_chapter_id") or ""
+        chapter_topics = self._chapter_topics(state, chapter_id) if chapter_id else state["plan"]
+        active = [t for t in chapter_topics if t.status in {TopicStatus.PENDING, TopicStatus.IN_PROGRESS}]
+        resolved = [t for t in chapter_topics if t.status == TopicStatus.COMPLETED]
+        topic_ids = [t.id for t in chapter_topics]
+        evidence = self._context_evidence(
+            state,
+            topic_ids=topic_ids,
+            budget_tokens=self._half_prompt_budget(),
+        )
+        return NodeContext(
+            query=state["query"],
+            chapter_id=chapter_id,
+            coverage_summary=self._render_coverage_summary(state, chapter_id=chapter_id),
+            source_balance_summary=self._render_source_balance_summary(state),
+            active_subqueries=self._render_topics(active),
+            resolved_subqueries=self._render_topics(resolved),
+            open_gaps=self._render_gaps([g for g in state["open_gaps"] if g.topic_id in set(topic_ids)]),
+            dossier_context=self._build_dossier(state, chapter_id=chapter_id),
+            evidentiary=evidence,
+        )
+
+    def auditor_context(self, state: ResearchState, chapter: ResearchTopic) -> NodeContext:
+        """Context for the auditor node: chapter evidence + coverage for devil's advocate review."""
+        chapter_id = chapter.chapter_id or chapter.id
+        chapter_topics = self._chapter_topics(state, chapter_id)
+        chapter_evidence = self._chapter_evidence(state, chapter_id)
+        topic_ids = {t.id for t in chapter_topics}
+        chapter_gaps = [g for g in state["open_gaps"] if g.topic_id in topic_ids]
+        subtopics = [t for t in chapter_topics if t.depth > 0]
+        audit_attempts = (state.get("topic_audit_attempts") or {}).get(chapter_id, 0)
+        return NodeContext(
+            query=state["query"],
+            chapter_id=chapter_id,
+            chapter_question=chapter.question,
+            chapter_criteria="\n".join(f"- {c}" for c in chapter.success_criteria) or "- None",
+            subtopics_summary=self._render_topics(subtopics),
+            coverage_summary=self._render_coverage_summary(state, chapter_id=chapter_id),
+            open_gaps=self._render_gaps(chapter_gaps),
+            evidentiary=chapter_evidence,
+            audit_attempt=audit_attempts + 1,
+            max_audit_attempts=self._config.runtime.max_audit_rejections,
+        )
+
+    def sub_synthesizer_context(self, state: ResearchState, chapter: ResearchTopic) -> NodeContext:
+        """Context for per-chapter synthesis: only chapter evidence within budget."""
+        chapter_id = chapter.chapter_id or chapter.id
+        chapter_evidence = self._chapter_evidence(state, chapter_id)
+        chapter_topics = self._chapter_topics(state, chapter_id)
+        topic_ids = [t.id for t in chapter_topics]
+        chapter_gaps = [g for g in state["open_gaps"] if g.topic_id in set(topic_ids)]
+        limitations = [g.description for g in chapter_gaps if not g.actionable]
+        selected = select_evidence_for_context(
+            chapter_evidence,
+            topic_ids=topic_ids,
+            budget_tokens=self._available_prompt_budget(),
+        )
+        return NodeContext(
+            query=state["query"],
+            chapter_id=chapter_id,
+            chapter_question=chapter.question,
+            open_gaps=self._render_gaps(chapter_gaps),
+            limitations="\n".join(f"- {lim}" for lim in limitations) or "- None",
+            evidentiary=selected,
+        )
+
+    def global_synthesizer_context(self, state: ResearchState) -> NodeContext:
+        """Context for the final report: chapter drafts + cross-chapter info."""
+        drafts = state.get("chapter_drafts") or []
+        # Convert ChapterDraft models into plain dicts for the Jinja template
+        chapters_data: list[dict[str, object]] = []
+        all_evidence_ids: list[str] = []
+        for draft in drafts:
+            chapters_data.append(draft.model_dump())
+            all_evidence_ids.extend(draft.evidence_ids)
+
+        # Collect all evidence across chapters for source building
+        all_evidence = [e for e in state["curated_evidence"] if e.evidence_id in set(all_evidence_ids)]
+
+        # Gather cross-chapter limitations
+        global_lims: list[str] = []
+        for draft in drafts:
+            global_lims.extend(draft.limitations)
+
+        return NodeContext(
+            query=state["query"],
+            chapters=chapters_data,
+            global_limitations=global_lims,
+            evidentiary=all_evidence,
+        )
+
     def synthesis_budget(self, state: ResearchState) -> SynthesisBudget:
-        dossier = self._build_dossier(state)
         base_prompt = self._prompt_loader.render(
-            "synthesizer",
+            "global_synthesizer",
             {
                 "query": state["query"],
-                "coverage_summary": "",
-                "source_balance_summary": "",
-                "open_gaps": "",
-                "dossier_context": dossier,
-                "evidentiary": "",
+                "chapters": [],
+                "global_limitations": [],
                 "language": self._config.runtime.language,
                 "format_instructions": "",
             },
@@ -172,74 +360,6 @@ class ContextManager:
             selected_evidence_count=len(selected_evidence),
             candidate_evidence_count=len(candidate_evidence),
             final_context_full=overflow > 0,
-        )
-
-    def planner_context(self, state: ResearchState) -> NodeContext:
-        active, resolved = self._topic_lists(state)
-        return NodeContext(
-            query=state["query"],
-            has_subqueries=bool(state["plan"]),
-            coverage_summary=self._render_coverage_summary(state),
-            source_balance_summary=self._render_source_balance_summary(state),
-            active_subqueries=self._render_topics(active),
-            resolved_subqueries=self._render_topics(resolved),
-            open_gaps=self._render_gaps(state["open_gaps"]),
-            dossier_context=self._build_dossier(state),
-        )
-
-    def extractor_context(self, state: ResearchState, topic: ResearchTopic, local_source: str) -> NodeContext:
-        evidence = self._context_evidence(
-            state,
-            topic_ids=[topic.id],
-            budget_tokens=self._half_prompt_budget(),
-        )
-        return NodeContext(
-            query=state["query"],
-            active_subqueries=f"- {topic.id}: {topic.question}",
-            open_gaps=self._render_gaps([gap for gap in state["open_gaps"] if gap.topic_id == topic.id]),
-            evidentiary=evidence,
-            local_source=local_source,
-        )
-
-    def evaluator_context(self, state: ResearchState) -> NodeContext:
-        active, resolved = self._topic_lists(state)
-        active_topic_id = state.get("active_topic_id")
-        evidence = self._context_evidence(
-            state,
-            topic_ids=[active_topic_id] if active_topic_id else [],
-            budget_tokens=self._half_prompt_budget(),
-        )
-        return NodeContext(
-            query=state["query"],
-            coverage_summary=self._render_coverage_summary(state),
-            source_balance_summary=self._render_source_balance_summary(state),
-            active_subqueries=self._render_topics(active),
-            resolved_subqueries=self._render_topics(resolved),
-            open_gaps=self._render_gaps(state["open_gaps"]),
-            dossier_context=self._build_dossier(state),
-            evidentiary=evidence,
-        )
-
-    def synthesizer_context(self, state: ResearchState) -> NodeContext:
-        budget = state.get("synthesis_budget") or self.synthesis_budget(state)
-        topic_ids = [topic.id for topic in state["plan"] if topic.status == TopicStatus.COMPLETED]
-        if not topic_ids:
-            topic_ids = [topic.id for topic in state["plan"]]
-        evidence = self._context_evidence(
-            state,
-            topic_ids=topic_ids,
-            budget_tokens=budget.available_prompt_tokens,
-        )
-        active, resolved = self._topic_lists(state)
-        return NodeContext(
-            query=state["query"],
-            coverage_summary=self._render_coverage_summary(state),
-            source_balance_summary=self._render_source_balance_summary(state),
-            active_subqueries=self._render_topics(active),
-            resolved_subqueries=self._render_topics(resolved),
-            open_gaps=self._render_gaps(state["open_gaps"]),
-            dossier_context=self._build_dossier(state),
-            evidentiary=evidence,
         )
 
     def debug_state_snapshot(self, state: ResearchState, *, limit: int = 5) -> dict[str, object]:

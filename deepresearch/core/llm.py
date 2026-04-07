@@ -15,8 +15,8 @@ from pydantic import BaseModel, ValidationError
 from ..config import ResearchConfig
 from ..context_manager import NodeContext
 from ..prompting import PromptTemplateLoader
-from ..state import FinalReport
-from .payloads import CoveragePayload, EvidencePayload, PlannerPayload
+from ..state import ChapterDraft, FinalReport
+from .payloads import AuditPayload, EvidencePayload, MetaPlannerPayload, MicroPlannerPayload
 from .utils import build_report_sources
 
 _JSON_FALLBACK_INSTRUCTION = "Return valid JSON only."
@@ -196,42 +196,50 @@ class LLMWorkers:
 
         return None
 
-    @traceable(name="planner-llm")
-    def plan_research(self, context: NodeContext) -> PlannerPayload:
-        payload, _ = self._parse_response(
-            "planner",
-            context.model_dump(),
-            PlannerPayload,
-            self._config.model.temperature_planner,
-        )
+    # ------------------------------------------------------------------
+    # Meta-planner
+    # ------------------------------------------------------------------
+
+    @traceable(name="meta-planner-llm")
+    def meta_plan(self, context: NodeContext) -> MetaPlannerPayload:
+        payload, _ = self.meta_plan_with_usage(context)
         return payload
 
-    @traceable(name="planner-llm-with-usage")
-    def plan_research_with_usage(self, context: NodeContext) -> tuple[PlannerPayload, dict[str, int]]:
+    @traceable(name="meta-planner-llm-with-usage")
+    def meta_plan_with_usage(self, context: NodeContext) -> tuple[MetaPlannerPayload, dict[str, int]]:
         return self._parse_response(
-            "planner",
+            "meta_planner",
             context.model_dump(),
-            PlannerPayload,
-            self._config.model.temperature_planner,
+            MetaPlannerPayload,
+            self._config.model.temperature_meta_planner,
         )
+
+    # ------------------------------------------------------------------
+    # Micro-planner
+    # ------------------------------------------------------------------
+
+    @traceable(name="micro-planner-llm")
+    def micro_plan(self, context: NodeContext) -> MicroPlannerPayload:
+        payload, _ = self.micro_plan_with_usage(context)
+        return payload
+
+    @traceable(name="micro-planner-llm-with-usage")
+    def micro_plan_with_usage(self, context: NodeContext) -> tuple[MicroPlannerPayload, dict[str, int]]:
+        return self._parse_response(
+            "micro_planner",
+            context.model_dump(),
+            MicroPlannerPayload,
+            self._config.model.temperature_micro_planner,
+        )
+
+    # ------------------------------------------------------------------
+    # Evidence extraction
+    # ------------------------------------------------------------------
 
     @traceable(name="extractor-llm")
     def extract_evidence(self, context: NodeContext) -> EvidencePayload:
-        vars = context.model_dump()
-        vars["evidentiary"] = "\n".join(
-            f"- {e.canonical_claim} | {e.sources[0].title if e.sources else 'Unknown Source'}"
-            for e in context.evidentiary
-        )
-        try:
-            payload, _ = self._parse_response(
-                "extractor",
-                vars,
-                EvidencePayload,
-                self._config.model.temperature_extractor,
-            )
-            return payload
-        except (json.JSONDecodeError, ValidationError, ValueError):
-            return EvidencePayload()
+        payload, _ = self.extract_evidence_with_usage(context)
+        return payload
 
     @traceable(name="extractor-llm-with-usage")
     def extract_evidence_with_usage(self, context: NodeContext) -> tuple[EvidencePayload, dict[str, int]]:
@@ -250,88 +258,89 @@ class LLMWorkers:
         except (json.JSONDecodeError, ValidationError, ValueError):
             return EvidencePayload(), {}
 
+    # ------------------------------------------------------------------
+    # Auditor (devil's advocate)
+    # ------------------------------------------------------------------
+
+    @traceable(name="auditor-llm")
+    def audit_evidence(self, context: NodeContext) -> AuditPayload:
+        payload, _ = self.audit_evidence_with_usage(context)
+        return payload
+
+    @traceable(name="auditor-llm-with-usage")
+    def audit_evidence_with_usage(self, context: NodeContext) -> tuple[AuditPayload, dict[str, int]]:
+        return self._parse_response(
+            "auditor",
+            context.model_dump(),
+            AuditPayload,
+            self._config.model.temperature_auditor,
+        )
+
+    # ------------------------------------------------------------------
+    # Sub-synthesiser (per-chapter → ChapterDraft)
+    # ------------------------------------------------------------------
+
+    @traceable(name="sub-synthesizer-llm")
+    def sub_synthesize(self, context: NodeContext, chapter_id: str) -> ChapterDraft:
+        draft, _ = self.sub_synthesize_with_usage(context, chapter_id)
+        return draft
+
+    @traceable(name="sub-synthesizer-llm-with-usage")
+    def sub_synthesize_with_usage(
+        self,
+        context: NodeContext,
+        chapter_id: str,
+    ) -> tuple[ChapterDraft, dict[str, int]]:
+        vars = context.model_dump()
+        vars["chapter_id"] = chapter_id
+        _domain = self._extract_domain_label
+        vars["evidentiary"] = "\n".join(
+            (
+                f"- {e.evidence_id} | claim={e.canonical_claim} | "
+                f"summary={e.summary} | confidence={e.confidence.value} | "
+                f"sources={'; '.join(
+                    f'{s.title} @ {_domain(s.url)}' for s in e.sources[:2]
+                ) or 'unknown'}"
+            )
+            for e in context.evidentiary
+        )
+        return self._parse_response(
+            "sub_synthesizer",
+            vars,
+            ChapterDraft,
+            self._config.model.temperature_sub_synthesizer,
+        )
+
+    # ------------------------------------------------------------------
+    # Global synthesiser (all chapters → FinalReport markdown)
+    # ------------------------------------------------------------------
+
     @staticmethod
     def _extract_domain_label(url: str) -> str:
         return re.sub(r"^www\.", "", url.split("/")[2])
 
-    @traceable(name="evaluator-llm")
-    def evaluate_coverage(self, context: NodeContext) -> CoveragePayload:
-        vars = context.model_dump()
-        _domain = self._extract_domain_label
-        vars["evidentiary"] = "\n".join(
-            (
-                f"- {e.topic_id}: {e.canonical_claim} | "
-                f"source={e.sources[0].title if e.sources else 'Unknown Source'} | "
-                f"domain={_domain(e.sources[0].url) if e.sources else 'unknown'}"
-            )
-            for e in context.evidentiary
-        )
-        try:
-            payload, _ = self._parse_response(
-                "evaluator",
-                vars,
-                CoveragePayload,
-                self._config.model.temperature_evaluator,
-            )
-            return payload
-        except (json.JSONDecodeError, ValidationError, ValueError):
-            return CoveragePayload()
-
-    @traceable(name="evaluator-llm-with-usage")
-    def evaluate_coverage_with_usage(self, context: NodeContext) -> tuple[CoveragePayload, dict[str, int]]:
-        vars = context.model_dump()
-        _domain = self._extract_domain_label
-        vars["evidentiary"] = "\n".join(
-            (
-                f"- {e.topic_id}: {e.canonical_claim} | "
-                f"source={e.sources[0].title if e.sources else 'Unknown Source'} | "
-                f"domain={_domain(e.sources[0].url) if e.sources else 'unknown'}"
-            )
-            for e in context.evidentiary
-        )
-        try:
-            return self._parse_response(
-                "evaluator",
-                vars,
-                CoveragePayload,
-                self._config.model.temperature_evaluator,
-            )
-        except (json.JSONDecodeError, ValidationError, ValueError):
-            return CoveragePayload(), {}
-
-    def synthesize_report(self, context: NodeContext, query: str) -> FinalReport:
-        report, _ = self.synthesize_report_with_usage(context, query)
+    def global_synthesize(self, context: NodeContext, query: str) -> FinalReport:
+        report, _ = self.global_synthesize_with_usage(context, query)
         return report
 
-    @traceable(name="synthesizer-llm-with-usage")
-    def synthesize_report_with_usage(self, context: NodeContext, query: str) -> tuple[FinalReport, dict[str, int]]:
+    @traceable(name="global-synthesizer-llm-with-usage")
+    def global_synthesize_with_usage(
+        self,
+        context: NodeContext,
+        query: str,
+    ) -> tuple[FinalReport, dict[str, int]]:
         vars = context.model_dump()
-        _domain = self._extract_domain_label
-        vars.update(
-            {
-                "query": query,
-                "evidentiary": "\n".join(
-                    (
-                        f"- {e.evidence_id} | topic={e.topic_id} | claim={e.canonical_claim} | "
-                        f"summary={e.summary} | confidence={e.confidence.value} | "
-                        f"sources={'; '.join(
-                            f'{source.title} @ {_domain(source.url)}' for source in e.sources[:2]
-                        ) or 'unknown'}"
-                    )
-                    for e in context.evidentiary
-                ),
-            }
-        )
+        vars["query"] = query
 
         prompt = self._prompt_loader.render(
-            "synthesizer",
+            "global_synthesizer",
             {
                 **vars,
                 "language": self._config.runtime.language,
                 "format_instructions": "",
             },
         )
-        llm = self._llm(temperature=self._config.model.temperature_synthesizer, json_format=False)
+        llm = self._llm(temperature=self._config.model.temperature_global_synthesizer, json_format=False)
         usage: dict[str, int] = {}
 
         try:
@@ -354,7 +363,9 @@ class LLMWorkers:
                 md += f"{i}. [{s.title}]({s.url}) (Evidence: {', '.join(s.evidence_ids)})\n"
 
         return FinalReport(
-            query=query, executive_answer="See report.",
-            cited_sources=cited_sources, evidence_ids=[e.evidence_id for e in context.evidentiary],
-            markdown_report=md
+            query=query,
+            executive_answer="See report.",
+            cited_sources=cited_sources,
+            evidence_ids=[e.evidence_id for e in context.evidentiary],
+            markdown_report=md,
         ), usage

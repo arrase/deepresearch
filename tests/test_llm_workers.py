@@ -2,19 +2,16 @@ from __future__ import annotations
 
 from deepresearch.config import ResearchConfig
 from deepresearch.core.llm import LLMInvocation, LLMWorkers
-from deepresearch.core.payloads import PlannerPayload
+from deepresearch.core.payloads import MetaPlannerPayload
 
 
-def _planner_variables() -> dict[str, object]:
+def _meta_planner_variables() -> dict[str, object]:
     return {
         "query": "What is Tavily?",
-        "has_subqueries": False,
-        "coverage_summary": "- No subqueries yet.",
-        "source_balance_summary": "- No evidence has been accepted yet.",
-        "active_subqueries": "- None",
-        "resolved_subqueries": "- None",
-        "open_gaps": "- None",
-        "dossier_context": "",
+        "today_date": "2025-01-01",
+        "hypotheses": [],
+        "max_chapters": 5,
+        "min_chapters": 3,
     }
 
 
@@ -28,17 +25,17 @@ def test_llmworkers_parse_response_returns_usage(monkeypatch, tmp_path) -> None:
         "_invoke",
         lambda llm, messages: LLMInvocation(
             content=(
-                '{"subqueries": [{"question": "Capabilities", "rationale": '
+                '{"chapters": [{"question": "Capabilities", "rationale": '
                 '"Understand product", "search_terms": ["tavily capabilities"]}], '
-                '"search_intents": [], "hypotheses": ["Tavily is a research API"]}'
+                '"hypotheses": ["Tavily is a research API"]}'
             ),
             usage={"input_tokens": 12, "output_tokens": 7, "total_tokens": 19},
         ),
     )
 
-    payload, usage = workers._parse_response("planner", _planner_variables(), PlannerPayload, 0.2)
+    payload, usage = workers._parse_response("meta_planner", _meta_planner_variables(), MetaPlannerPayload, 0.2)
 
-    assert payload.subqueries
+    assert payload.chapters
     assert usage["total_tokens"] == 19
 
 
@@ -49,9 +46,9 @@ def test_llmworkers_repair_flow_returns_repaired_payload(monkeypatch, tmp_path) 
         LLMInvocation(content="not valid json", usage={"input_tokens": 10, "output_tokens": 3, "total_tokens": 13}),
         LLMInvocation(
             content=(
-                '{"subqueries": [{"question": "Limitations", "rationale": '
+                '{"chapters": [{"question": "Limitations", "rationale": '
                 '"Need weaknesses", "search_terms": ["tavily limitations"]}], '
-                '"search_intents": [], "hypotheses": []}'
+                '"hypotheses": []}'
             ),
             usage={"input_tokens": 14, "output_tokens": 9, "total_tokens": 23},
         ),
@@ -60,7 +57,7 @@ def test_llmworkers_repair_flow_returns_repaired_payload(monkeypatch, tmp_path) 
     monkeypatch.setattr(workers, "_llm", lambda temperature, json_format=True: object())
     monkeypatch.setattr(workers, "_invoke", lambda llm, messages: next(responses))
 
-    payload, usage = workers._parse_response("planner", _planner_variables(), PlannerPayload, 0.2)
+    payload, usage = workers._parse_response("meta_planner", _meta_planner_variables(), MetaPlannerPayload, 0.2)
 
-    assert payload.subqueries[0].question == "Limitations"
+    assert payload.chapters[0].question == "Limitations"
     assert usage["total_tokens"] == 23

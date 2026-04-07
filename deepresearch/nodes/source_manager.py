@@ -47,7 +47,6 @@ class SourceManagerNode:
             "current_batch": [],
             "candidate_queue": [],
             "technical_reason": technical_reason,
-            "replan_requested": False,
             "current_iteration": state["current_iteration"] + 1,
         }
 
@@ -111,7 +110,15 @@ class SourceManagerNode:
         self,
         state: ResearchState,
     ) -> tuple[ResearchTopic | None, str | None, list[ResearchTopic], dict[str, int]]:
-        active_topic = choose_active_topic(state["plan"], state["topic_attempts"], state["topic_coverage"])
+        chapter_id = state.get("current_chapter_id")
+        plan_scope = (
+            [t for t in state["plan"] if t.chapter_id == chapter_id] if chapter_id else state["plan"]
+        )
+        # Prefer sub-topics (depth>0) over the chapter container
+        sub_topics = [t for t in plan_scope if t.depth > 0]
+        if sub_topics:
+            plan_scope = sub_topics
+        active_topic = choose_active_topic(plan_scope, state["topic_attempts"], state["topic_coverage"])
         if active_topic is None:
             return None, None, state["plan"], dict(state["topic_attempts"])
 
@@ -285,7 +292,6 @@ class SourceManagerNode:
             "current_batch": [],
             "current_iteration": state["current_iteration"] + 1,
             "technical_reason": "no_results",
-            "replan_requested": self._runtime.config.runtime.allow_dynamic_replan,
             "new_evidence_in_cycle": 0,
             "merged_evidence_in_cycle": 0,
             "useful_source_in_cycle": False,
@@ -327,7 +333,6 @@ class SourceManagerNode:
             "discarded_sources": discarded_sources,
             "current_iteration": state["current_iteration"] + 1,
             "technical_reason": None,
-            "replan_requested": False,
             "new_evidence_in_cycle": 0,
             "merged_evidence_in_cycle": 0,
             "useful_source_in_cycle": True,

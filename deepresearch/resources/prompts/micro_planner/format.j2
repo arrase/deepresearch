@@ -1,0 +1,16 @@
+Return one JSON object:
+{
+  "subtopics": [
+    {"id": "topic_1_1", "question": "...", "rationale": "...", "priority": 1, "evidence_target": 1, "success_criteria": ["..."], "search_terms": ["..."]}
+  ],
+  "search_intents": [
+    {"query": "...", "rationale": "...", "topic_ids": ["topic_1_1"]}
+  ]
+}
+Rules:
+- Each item inside `subtopics` is a research sub-topic for the chapter.
+- priority must be an integer from 1 to 5.
+- evidence_target must be an integer from 1 to 3.
+- Each list may be empty if no new sub-topics or intents are needed.
+- No extra keys.
+- JSON only.

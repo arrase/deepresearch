@@ -1,0 +1,14 @@
+Return one JSON object:
+{
+  "chapters": [
+    {"id": "topic_1", "question": "...", "rationale": "...", "priority": 1, "evidence_target": 2, "success_criteria": ["..."], "search_terms": ["..."]}
+  ],
+  "hypotheses": ["..."]
+}
+Rules:
+- Each item inside `chapters` is a high-level research chapter.
+- priority must be an integer from 1 to 5.
+- evidence_target must be an integer from 1 to 5.
+- hypotheses may be empty.
+- No extra keys.
+- JSON only.

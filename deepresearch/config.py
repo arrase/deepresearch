@@ -91,11 +91,17 @@ class ModelConfig(BaseModel):
         default="http://127.0.0.1:11434",
         description="Base URL of the local or remote Ollama server.",
     )
-    temperature_planner: float = Field(
+    temperature_meta_planner: float = Field(
+        default=0.3,
+        ge=0.0,
+        le=1.0,
+        description="Sampling temperature for the meta-planning stage (chapter decomposition).",
+    )
+    temperature_micro_planner: float = Field(
         default=0.2,
         ge=0.0,
         le=1.0,
-        description="Sampling temperature for the planning stage.",
+        description="Sampling temperature for the micro-planning stage (sub-topics).",
     )
     temperature_extractor: float = Field(
         default=0.0,
@@ -103,17 +109,23 @@ class ModelConfig(BaseModel):
         le=1.0,
         description="Sampling temperature for evidence extraction.",
     )
-    temperature_evaluator: float = Field(
-        default=0.0,
+    temperature_auditor: float = Field(
+        default=0.3,
         ge=0.0,
         le=1.0,
-        description="Sampling temperature for coverage evaluation.",
+        description="Sampling temperature for the auditor (devil's advocate).",
     )
-    temperature_synthesizer: float = Field(
+    temperature_sub_synthesizer: float = Field(
         default=0.1,
         ge=0.0,
         le=1.0,
-        description="Sampling temperature for final report synthesis.",
+        description="Sampling temperature for per-chapter synthesis.",
+    )
+    temperature_global_synthesizer: float = Field(
+        default=0.1,
+        ge=0.0,
+        le=1.0,
+        description="Sampling temperature for the final report assembly.",
     )
     num_ctx: int = Field(default=100000, ge=4096, description="Maximum context window passed to Ollama.")
     num_predict: int = Field(default=8192, ge=64, description="Maximum number of tokens generated per LLM call.")
@@ -237,14 +249,23 @@ class RuntimeConfig(BaseModel):
         ge=1,
         description="Abort when too many consecutive technical failures happen.",
     )
-    semantic_eval_interval: int = Field(
-        default=0,
-        ge=0,
-        description="Run evaluator every N cycles even without strong evidence updates; 0 disables it.",
+    max_chapters: int = Field(
+        default=5,
+        ge=1,
+        le=10,
+        description="Maximum chapters the meta-planner can create from the query.",
     )
-    allow_dynamic_replan: bool = Field(
-        default=True,
-        description="Allow the planner to revise the topic plan during the run.",
+    max_topic_depth: int = Field(
+        default=2,
+        ge=1,
+        le=4,
+        description="Maximum nesting depth for sub-topics below a chapter.",
+    )
+    max_audit_rejections: int = Field(
+        default=2,
+        ge=0,
+        le=5,
+        description="How many times the auditor can reject a chapter before auto-approval.",
     )
     verbosity: int = Field(default=0, ge=0, le=3, description="CLI log verbosity from quiet to detailed diagnostics.")
     llm_retry_attempts: int = Field(

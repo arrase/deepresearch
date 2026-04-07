@@ -1,0 +1,32 @@
+Research question:
+{{ query }}
+
+Today's date: {{ today_date }}
+
+{% if hypotheses %}
+Working hypotheses from prior analysis:
+{% for h in hypotheses %}
+- {{ h }}
+{% endfor %}
+{% endif %}
+
+Task:
+Decompose the research question into {{ max_chapters }} or fewer non-overlapping chapters.
+Each chapter is a major dimension of the question that requires its own investigation.
+
+Rules:
+- Think in research chapters, not final prose. Each chapter will be researched and written independently.
+- Cover only the essential facets needed to produce a thorough answer.
+- Prefer {{ min_chapters }} to {{ max_chapters }} chapters. Never exceed {{ max_chapters }}.
+- Chapters must not overlap in scope. Each should address a distinct angle.
+- Use the SAME language as the research question for question, rationale, and success_criteria.
+- search_terms must be short web-search keyword phrases (2-5 words), not long sentences.
+- search_terms should use the language most likely to return good web results. For regional or local queries, keep the original language. For technical or scientific topics, prefer English terms.
+- evidence_target should be 2 or 3 per chapter.
+- success_criteria should describe what counts as sufficient evidence for the chapter.
+- priority: 1 = most important chapter, 5 = least important. Assign based on relevance to the question.
+
+Output discipline:
+- Return valid JSON only.
+- No commentary.
+- No extra keys.

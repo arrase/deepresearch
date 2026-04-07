@@ -44,6 +44,22 @@ class ContextManagerNode:
             iteration=state["current_iteration"],
             dedup_config=self._runtime.config.dedup,
         )
+
+        # Propagate chapter_id from the topic → evidence mapping
+        chapter_id = state.get("current_chapter_id") or ""
+        topic_chapter_map: dict[str, str] = {}
+        for topic in state["plan"]:
+            topic_chapter_map[topic.id] = topic.chapter_id or chapter_id
+
+        for evidence in accepted:
+            if not evidence.chapter_id:
+                evidence.chapter_id = topic_chapter_map.get(evidence.topic_id, chapter_id)
+
+        # Also backfill chapter_id on existing curated evidence if missing
+        for evidence in curated:
+            if not evidence.chapter_id:
+                evidence.chapter_id = topic_chapter_map.get(evidence.topic_id, chapter_id)
+
         dossier = update_working_dossier(state["working_dossier"], accepted)
         coverage = compute_topic_coverages(state["plan"], curated, state["topic_attempts"])
         discarded = self._discard_no_evidence_sources(state)

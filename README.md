@@ -4,23 +4,29 @@ DeepResearch is a local-first research CLI for complex, open-ended questions. It
 
 ## Key Features
 
-- Autonomous research planning with subqueries and search intents.
-- Local-first execution through Ollama.
+- Hierarchical Map-Reduce architecture that decomposes questions into independent chapters.
+- Local-first execution through Ollama with per-stage temperature control.
 - Tavily-backed source discovery with raw-content extraction.
 - Traceable reports backed by atomic evidence, URLs, and quotations.
-- Iterative refinement that re-searches when coverage is weak.
+- Deterministic evaluator that tracks stagnation signals without LLM calls.
+- Devil's advocate auditor that can reject and re-plan chapters before synthesis.
 - Markdown, PDF, and Discord output modes.
 
 ## How A Run Works
 
-Each run follows the same loop:
+Each run follows a hierarchical Map-Reduce pipeline with nine graph nodes:
 
-1. The planner turns your question into subqueries and search intents.
-2. The source manager searches Tavily and filters candidates with usable raw content.
-3. The extractor turns useful passages into atomic evidence.
-4. The context manager curates evidence and updates the working dossier.
-5. The evaluator decides whether the research is sufficient or whether another cycle is needed.
-6. The synthesizer writes the final report once the run stops.
+1. The **meta-planner** decomposes the research question into independent chapters, each covering a distinct dimension of the topic.
+2. For each chapter, the **micro-planner** creates focused sub-topics with concrete search terms and intents.
+3. The **source manager** executes Tavily searches and filters candidates with enough raw content.
+4. The **extractor** turns useful passages into atomic evidence objects attached to sources.
+5. The **context manager** deduplicates evidence, merges near-duplicates, and updates the per-topic working dossier.
+6. The **evaluator** runs a deterministic coverage assessment (no LLM) and decides whether to continue searching, move to audit, or stop.
+7. Once a chapter's topics are covered, the **auditor** reviews the evidence as a devil's advocate. It can reject and send the chapter back to the micro-planner for additional research.
+8. The **sub-synthesizer** produces a chapter draft from the curated evidence for each completed chapter.
+9. After all chapters are done, the **global synthesizer** assembles every chapter draft into the final report with an executive answer, key findings, and traceable citations.
+
+The Map phase researches each chapter independently through its own search-extract-evaluate loop. The Reduce phase merges all chapter drafts into a single coherent report.
 
 ## Requirements
 
@@ -65,7 +71,7 @@ ollama serve
 DeepResearch creates an editable config tree under ~/.deepresearch/config/ the first time the CLI loads its configuration. That tree includes:
 
 - config.toml
-- prompts/ templates for planner, extractor, evaluator, synthesizer, and repair flows
+- prompts/ templates for meta-planner, micro-planner, extractor, auditor, sub-synthesizer, global synthesizer, and repair flows
 
 Before your first real run, set a Tavily API key in ~/.deepresearch/config/config.toml.
 
@@ -141,6 +147,12 @@ The main user-editable file is ~/.deepresearch/config/config.toml. The runtime v
 [model]
 model_name = "qwen3.5:9b" # Ollama model name used for all research stages.
 base_url = "http://127.0.0.1:11434" # Base URL of the local or remote Ollama server.
+temperature_meta_planner = 0.3 # Sampling temperature for chapter decomposition.
+temperature_micro_planner = 0.2 # Sampling temperature for sub-topic planning.
+temperature_extractor = 0.0 # Sampling temperature for evidence extraction (deterministic).
+temperature_auditor = 0.3 # Sampling temperature for the devil's advocate auditor.
+temperature_sub_synthesizer = 0.1 # Sampling temperature for per-chapter synthesis.
+temperature_global_synthesizer = 0.1 # Sampling temperature for final report assembly.
 num_ctx = 100000 # Maximum context window passed to Ollama.
 num_predict = 8192 # Maximum tokens generated per LLM call.
 timeout_seconds = 120 # Per-request timeout for Ollama calls.
@@ -160,14 +172,15 @@ min_source_chars = 300 # Minimum source content length required before extractio
 
 ```toml
 [runtime]
-max_iterations = 8 # Hard cap on planner and search cycles for a run.
+max_iterations = 8 # Hard cap on total search cycles across all chapters.
 search_batch_size = 3 # How many candidate search queries to execute per cycle.
 min_attempts_before_exhaustion = 3 # Minimum attempts before a topic can be marked as exhausted.
 max_cycles_without_new_evidence = 4 # Stop after this many cycles without newly accepted evidence.
 max_cycles_without_useful_sources = 4 # Stop after this many cycles without useful sources.
 max_consecutive_technical_failures = 3 # Abort after too many consecutive technical failures.
-semantic_eval_interval = 0 # Run evaluator every N cycles even without strong evidence updates; 0 disables it.
-allow_dynamic_replan = true # Allow the planner to revise the topic plan during the run.
+max_chapters = 5 # Maximum chapters the meta-planner can create (1-10).
+max_topic_depth = 2 # Maximum nesting depth for sub-topics below a chapter (1-4).
+max_audit_rejections = 2 # How many times the auditor can reject a chapter before auto-approval (0-5).
 verbosity = 0 # CLI log verbosity from quiet to detailed diagnostics.
 llm_retry_attempts = 2 # How many times to retry recoverable LLM parsing failures.
 language = "English" # Language used for the final report.
@@ -192,16 +205,16 @@ project = "DeepResearch" # LangSmith project name used for uploaded traces.
 
 ## Runtime Tuning And Stop Conditions
 
-The hard cap for research depth is max_iterations, but the run can stop earlier when the evaluator decides that continuing is not useful.
+The hard cap for research depth is max_iterations, but the run can stop earlier when the deterministic evaluator decides that continuing is not useful.
+
+The evaluator tracks stagnation signals without making LLM calls: newly accepted evidence counts, useful source discovery, per-topic coverage, and consecutive technical failures.
 
 The main stop reasons are:
 
-- sufficient_information
-- final_context_full
-- research_exhausted
-- max_iterations_reached
-
-The runtime tracks signals such as newly accepted evidence, useful sources, resolved subqueries, and technical failures.
+- **CONTEXT_SATURATION** when the synthesis token budget has been effectively consumed.
+- **PLAN_COMPLETED** when every chapter has been audited and synthesized.
+- **MAX_ITERATIONS_REACHED** when the run reaches the configured hard cap.
+- **STUCK_NO_SOURCES** when repeated cycles fail to produce new evidence or useful sources.
 
 ## Discord Delivery
 

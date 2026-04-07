@@ -6,14 +6,20 @@ import pytest
 
 from deepresearch.config import ResearchConfig
 from deepresearch.context_manager import ContextManager
-from deepresearch.core.payloads import CoveragePayload, EvidenceDraft, EvidencePayload, PlannerPayload
+from deepresearch.core.payloads import (
+    AuditPayload,
+    EvidenceDraft,
+    EvidencePayload,
+    MetaPlannerPayload,
+    MicroPlannerPayload,
+)
 from deepresearch.runtime import ResearchRuntime
 from deepresearch.state import (
+    ChapterDraft,
     ConfidenceLevel,
     CuratedEvidence,
     EvidenceSourceRef,
     FinalReport,
-    Gap,
     ReportSource,
     ResearchTopic,
     SearchCandidate,
@@ -74,7 +80,10 @@ class RecordingSearchClient:
 
 
 class FakeLLMWorkers:
-    def plan_research(self, context: object) -> PlannerPayload:
+    """Fake LLM workers implementing the new hierarchical Map-Reduce protocol."""
+
+    # -- meta-planner --
+    def meta_plan(self, context: object) -> MetaPlannerPayload:
         topic = ResearchTopic(
             id="topic_demo",
             question="What happened to fusion demand in 2026?",
@@ -82,16 +91,40 @@ class FakeLLMWorkers:
             evidence_target=1,
             search_terms=["fusion demand 2026"],
             status=TopicStatus.PENDING,
+            depth=0,
+            parent_id=None,
+            chapter_id="topic_demo",
         )
-        return PlannerPayload(
-            subqueries=[topic],
-            search_intents=[SearchIntent(query="fusion demand 2026", rationale="primary", topic_ids=[topic.id])],
+        return MetaPlannerPayload(
+            chapters=[topic],
             hypotheses=["Demand increased"],
         )
 
-    def plan_research_with_usage(self, context: object) -> tuple[PlannerPayload, dict[str, int]]:
-        return self.plan_research(context), {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15}
+    def meta_plan_with_usage(self, context: object) -> tuple[MetaPlannerPayload, dict[str, int]]:
+        return self.meta_plan(context), {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15}
 
+    # -- micro-planner --
+    def micro_plan(self, context: object) -> MicroPlannerPayload:
+        sub = ResearchTopic(
+            id="sub_demo_1",
+            question="What happened to fusion demand in 2026?",
+            rationale="Need detail",
+            evidence_target=1,
+            search_terms=["fusion demand 2026"],
+            status=TopicStatus.PENDING,
+            depth=1,
+            parent_id="topic_demo",
+            chapter_id="topic_demo",
+        )
+        return MicroPlannerPayload(
+            subtopics=[sub],
+            search_intents=[SearchIntent(query="fusion demand 2026", rationale="primary", topic_ids=["sub_demo_1"])],
+        )
+
+    def micro_plan_with_usage(self, context: object) -> tuple[MicroPlannerPayload, dict[str, int]]:
+        return self.micro_plan(context), {"input_tokens": 12, "output_tokens": 6, "total_tokens": 18}
+
+    # -- evidence extraction --
     def extract_evidence(self, context: object) -> EvidencePayload:
         draft = EvidenceDraft(
             summary="Demand increased",
@@ -106,19 +139,37 @@ class FakeLLMWorkers:
     def extract_evidence_with_usage(self, context: object) -> tuple[EvidencePayload, dict[str, int]]:
         return self.extract_evidence(context), {"input_tokens": 20, "output_tokens": 8, "total_tokens": 28}
 
-    def evaluate_coverage(self, context: object) -> CoveragePayload:
-        return CoveragePayload(
-            resolved_subquery_ids=["topic_demo"],
-            contradictions=[],
-            open_gaps=[],
-            is_sufficient=True,
-            rationale="Enough evidence",
+    # -- auditor --
+    def audit_evidence(self, context: object) -> AuditPayload:
+        return AuditPayload(
+            approved=True,
+            objections=[],
+            suggested_topics=[],
+            unresolved_limitations=[],
+            rationale="Evidence is sufficient.",
         )
 
-    def evaluate_coverage_with_usage(self, context: object) -> tuple[CoveragePayload, dict[str, int]]:
-        return self.evaluate_coverage(context), {"input_tokens": 12, "output_tokens": 4, "total_tokens": 16}
+    def audit_evidence_with_usage(self, context: object) -> tuple[AuditPayload, dict[str, int]]:
+        return self.audit_evidence(context), {"input_tokens": 12, "output_tokens": 4, "total_tokens": 16}
 
-    def synthesize_report(self, context: object, query: str) -> FinalReport:
+    # -- sub-synthesiser --
+    def sub_synthesize(self, context: object, chapter_id: str) -> ChapterDraft:
+        return ChapterDraft(
+            chapter_id=chapter_id,
+            title="Fusion Demand in 2026",
+            executive_summary="Fusion demand is rising in 2026.",
+            key_findings=["Demand increased in 2026"],
+            evidence_ids=["evidence_demo"],
+            confidence=ConfidenceLevel.HIGH,
+        )
+
+    def sub_synthesize_with_usage(
+        self, context: object, chapter_id: str
+    ) -> tuple[ChapterDraft, dict[str, int]]:
+        return self.sub_synthesize(context, chapter_id), {"input_tokens": 25, "output_tokens": 30, "total_tokens": 55}
+
+    # -- global synthesiser --
+    def global_synthesize(self, context: object, query: str) -> FinalReport:
         return FinalReport(
             query=query,
             executive_answer="Fusion demand increased in 2026 according to the accepted source.",
@@ -137,22 +188,23 @@ class FakeLLMWorkers:
             markdown_report="# Research Report\n\nFusion demand is rising.",
         )
 
-    def synthesize_report_with_usage(self, context: object, query: str) -> tuple[FinalReport, dict[str, int]]:
-        return self.synthesize_report(context, query), {"input_tokens": 30, "output_tokens": 40, "total_tokens": 70}
+    def global_synthesize_with_usage(self, context: object, query: str) -> tuple[FinalReport, dict[str, int]]:
+        return self.global_synthesize(context, query), {"input_tokens": 30, "output_tokens": 40, "total_tokens": 70}
 
 
-class InsufficientLLMWorkers(FakeLLMWorkers):
-    def evaluate_coverage(self, context: object) -> CoveragePayload:
-        return CoveragePayload(
-            resolved_subquery_ids=[],
-            contradictions=[],
-            open_gaps=[Gap(topic_id="topic_demo", description="Need more evidence")],
-            is_sufficient=False,
-            rationale="Need more evidence",
-        )
+class ExhaustedLLMWorkers(FakeLLMWorkers):
+    """LLM workers that extract no evidence (empty extraction)."""
+
+    def extract_evidence(self, context: object) -> EvidencePayload:
+        return EvidencePayload(evidences=[])
+
+    def extract_evidence_with_usage(self, context: object) -> tuple[EvidencePayload, dict[str, int]]:
+        return EvidencePayload(evidences=[]), {}
 
 
-class FinalContextFullLLMWorkers(InsufficientLLMWorkers):
+class FinalContextFullLLMWorkers(FakeLLMWorkers):
+    """LLM workers that produce large evidence to trigger context saturation."""
+
     def extract_evidence(self, context: object) -> EvidencePayload:
         draft = EvidenceDraft(
             summary="Demand increased and costs remain high. " * 8,
@@ -164,10 +216,8 @@ class FinalContextFullLLMWorkers(InsufficientLLMWorkers):
         )
         return EvidencePayload(evidences=[draft])
 
-
-class ExhaustedLLMWorkers(InsufficientLLMWorkers):
-    def extract_evidence(self, context: object) -> EvidencePayload:
-        return EvidencePayload(evidences=[])
+    def extract_evidence_with_usage(self, context: object) -> tuple[EvidencePayload, dict[str, int]]:
+        return self.extract_evidence(context), {"input_tokens": 20, "output_tokens": 8, "total_tokens": 28}
 
 
 @pytest.fixture()
@@ -197,6 +247,9 @@ def make_topic(**overrides: object) -> ResearchTopic:
         "evidence_target": 1,
         "search_terms": ["x definition"],
         "status": TopicStatus.PENDING,
+        "depth": 0,
+        "parent_id": None,
+        "chapter_id": "",
     }
     defaults.update(overrides)
     return ResearchTopic.model_validate(defaults)
@@ -205,6 +258,7 @@ def make_topic(**overrides: object) -> ResearchTopic:
 def make_curated_evidence(topic_id: str = "topic_1", **overrides: object) -> CuratedEvidence:
     defaults: dict[str, object] = {
         "topic_id": topic_id,
+        "chapter_id": "",
         "canonical_claim": "X is a defined concept",
         "summary": "Summary of the claim",
         "support_quotes": ["X means ..."],

@@ -1,0 +1,42 @@
+Research question:
+{{ query }}
+
+Chapter under review:
+- ID: {{ chapter_id }}
+- Question: {{ chapter_question }}
+- Success criteria: {{ chapter_criteria }}
+
+Sub-topics investigated:
+{{ subtopics_summary }}
+
+Coverage summary:
+{{ coverage_summary }}
+
+Evidence collected for this chapter:
+{{ evidentiary }}
+
+{% if open_gaps %}
+Known open gaps:
+{{ open_gaps }}
+{% endif %}
+
+Audit attempt: {{ audit_attempt }} of {{ max_audit_attempts }}
+
+Task:
+Evaluate whether the evidence for this chapter is sufficient, balanced, and free of critical flaws.
+
+Rules:
+- Set `approved` to true if the evidence reasonably covers the chapter question, even if imperfect.
+- Set `approved` to false only if there are serious gaps, significant bias, or contradictions that undermine the chapter quality.
+- `objections` must list specific problems you found (empty if approved).
+- `suggested_topics` should propose concrete follow-up sub-topics to address objections. Only include these if `approved` is false.
+- suggested_topics search_terms must be short web-search keyword phrases (2-5 words).
+- `unresolved_limitations` should list issues that cannot be fixed by more research (e.g., topic too recent, no public data).
+- `rationale` must explain your decision concisely.
+- Be pragmatic: if this is the last audit attempt, prefer approval with noted limitations over rejection.
+- Do not demand perfection. Sufficient evidence with acknowledged gaps is acceptable.
+
+Output discipline:
+- Return valid JSON only.
+- No commentary.
+- No extra keys.
